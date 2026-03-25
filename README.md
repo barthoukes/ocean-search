@@ -1,5 +1,6 @@
 # ocean-search
 Search engine based on Python/AI with a vector database.
+<img width="1200" height="896" alt="openart-image_1774458048054_958a80e8_1774458048112_2e92ee08" src="https://github.com/user-attachments/assets/1a8a5cda-177d-4c23-a31c-45a53138e468" />
 
 # Start program
 ```

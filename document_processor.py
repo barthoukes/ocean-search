@@ -8,7 +8,7 @@ from langchain_chroma import Chroma
 from langchain_core.documents import Document
 
 from embedders import SmartEmbedder
-from document_loader import (
+from document_loaders import (
     TextFileLoader, MarkupFileLoader, PDFLoader, 
     ImageLoader, CodeLoader, DocumentLoader
 )

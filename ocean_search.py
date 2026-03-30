@@ -15,6 +15,12 @@ import sys
 import shutil
 import time
 from typing import List, Set
+from langchain_chroma import Chroma
+# Check if BERT is available
+try:
+    from embedders import BERT_AVAILABLE
+except ImportError:
+    BERT_AVAILABLE = False
 
 from document_processor import DocumentProcessor
 from query_matcher import QueryMatcher
@@ -106,9 +112,6 @@ def clear_database(db_path: str, processor: DocumentProcessor) -> bool:
         # Create new processor with fresh database
         print("   🔄 Reinitializing database...")
         
-        # Update the processor's vector store with a new empty collection
-        from langchain_chroma import Chroma
-        
         # Create a new vector store with the same embedding function
         new_vector_store = Chroma(
             collection_name="document_collection",
@@ -144,12 +147,6 @@ def main():
     # Disable colors if requested
     if args.no_color:
         os.environ['NO_COLOR'] = '1'
-    
-    # Check if BERT is available
-    try:
-        from embedders import BERT_AVAILABLE
-    except ImportError:
-        BERT_AVAILABLE = False
     
     # Create document processor
     processor = DocumentProcessor(
@@ -255,7 +252,6 @@ def main():
                             shutil.rmtree(args.db_path, ignore_errors=True)
                         
                         # Recreate processor with fresh database
-                        from langchain_chroma import Chroma
                         processor.vector_store = Chroma(
                             collection_name="document_collection",
                             embedding_function=processor.smart_embedder,

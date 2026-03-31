@@ -13,76 +13,7 @@ from document_loaders import (
     ImageLoader, CodeLoader, DocumentLoader
 )
 from query_matcher import QueryMatcher
-
-
-class EnhancedDocument(Document):
-    """Extended Document class with additional helper methods."""
-    
-    def get_match_type_display(self) -> str:
-        """Return a user-friendly display of the match source."""
-        match_source = self.metadata.get('match_source', 'unknown')
-        
-        if match_source == 'file_content':
-            return "✓ Match from file content"
-        elif match_source == 'metadata_only':
-            return "ℹ Match from metadata only"
-        else:
-            return "? Unknown match source"
-    
-    def get_file_type_display(self) -> str:
-        """Return a formatted file type display."""
-        file_type = self.metadata.get('type', 'unknown')
-        extension = self.metadata.get('extension', '')
-        
-        type_icons = {
-            'text': '📄',
-            'markup': '📝',
-            'pdf': '📑',
-            'image': '🖼️',
-            'code': '💻',
-            'unknown': '❓'
-        }
-        
-        icon = type_icons.get(file_type, '📁')
-        embedder = self.metadata.get('embedding_type', 'ollama')
-        embedder_icon = "🧠" if embedder == "bert" else "🔧"
-        
-        if file_type == 'code':
-            language = self.metadata.get('language', '')
-            return f"{icon} {file_type.upper()} ({language}) {embedder_icon}"
-        elif file_type == 'image':
-            dimensions = f"{self.metadata.get('width', '?')}x{self.metadata.get('height', '?')}"
-            return f"{icon} {file_type.upper()} [{dimensions}] {embedder_icon}"
-        elif file_type == 'pdf':
-            pages = self.metadata.get('pages', '?')
-            return f"{icon} {file_type.upper()} [{pages} pages] {embedder_icon}"
-        else:
-            return f"{icon} {file_type.upper()}{extension} {embedder_icon}"
-    
-    def is_empty(self) -> bool:
-        """Check if the document has meaningful content."""
-        # Check if content is empty or just whitespace
-        if not self.page_content or not self.page_content.strip():
-            return True
-        
-        # Check for placeholder content from empty PDFs/images
-        empty_indicators = [
-            "no extractable text content",
-            "Image file:",
-            "EXIF Data:"
-        ]
-        
-        content_lower = self.page_content.lower()
-        for indicator in empty_indicators:
-            if indicator.lower() in content_lower:
-                # If it's only metadata and no real content
-                return True
-        
-        # Check if content is very short (less than 10 chars of real text)
-        if len(self.page_content.strip()) < 10:
-            return True
-        
-        return False
+from enhanced_document import EnhancedDocument
 
 
 class DocumentProcessor:
@@ -122,6 +53,44 @@ class DocumentProcessor:
         
         # Track empty files
         self.empty_files_count = 0
+        
+        # Test embedding functionality
+        self._test_embeddings(embed_model)
+    
+    
+    def _test_embeddings(self, embed_model: str) -> None:
+        """Test if embeddings are working properly."""
+        try:
+            print("\n🔍 Testing embedding functionality...")
+            test_query = "test document search"
+            test_embedding = self.smart_embedder.embed_query(test_query)
+            
+            if not test_embedding:
+                print("   ❌ ERROR: Embedding returned None")
+                print("   Check if Ollama is running: 'ollama serve'")
+                print(f"   Verify model is available: 'ollama pull {embed_model}'")
+            elif all(v == 0 for v in test_embedding):
+                print("   ❌ ERROR: Embedding is all zeros!")
+                print("   The embedding model is not working correctly.")
+                print(f"   Try: ollama pull {embed_model}")
+                print("   Also check: ollama list")
+            else:
+                # Calculate variance to see if embeddings are meaningful
+                variance = sum(v*v for v in test_embedding) / len(test_embedding)
+                print(f"   ✅ Embedding model verified")
+                print(f"   📊 Embedding dimension: {len(test_embedding)}")
+                print(f"   📊 Vector variance: {variance:.6f} (should be > 0)")
+                
+                if variance < 0.0001:
+                    print("   ⚠️  WARNING: Very low variance - embeddings may be poor quality")
+                else:
+                    print("   ✅ Embedding quality looks good")
+                    
+        except Exception as e:
+            print(f"\n   ❌ ERROR: Failed to create test embedding: {e}")
+            print("   Make sure Ollama is running: 'ollama serve'")
+            print(f"   Install the model: 'ollama pull {embed_model}'")
+    
     
     def _init_loaders(self, extensions: Optional[List[str]] = None) -> List[DocumentLoader]:
         """Initialize all available document loaders."""
@@ -142,6 +111,7 @@ class DocumentProcessor:
         
         return loaders
     
+    
     def process_file(self, file_path: str) -> Optional[EnhancedDocument]:
         """Process a single file using the appropriate loader."""
         for loader in self.loaders:
@@ -161,6 +131,7 @@ class DocumentProcessor:
                     
                     return enhanced_doc
         return None
+    
     
     def add_files_from_directory(self, directory: str) -> None:
         """Walk through directory and add all supported files to the vector store."""
@@ -218,7 +189,8 @@ class DocumentProcessor:
         if failed > 0:
             print(f"   ⚠️  Skipped {failed} unsupported files")
     
-    def search(self, query: str, k: int = 5, min_content_length: int = 10) -> List[Tuple[EnhancedDocument, List[Dict[str, Any]]]]:
+    
+    def search(self, query: str, k: int = 5, min_content_length: int = 10, score_threshold: float = 0.3) -> List[Tuple[EnhancedDocument, List[Dict[str, Any]]]]:
         """
         Search for documents and find matching snippets.
         
@@ -226,17 +198,32 @@ class DocumentProcessor:
             query: Search query
             k: Number of results to return
             min_content_length: Minimum content length to consider (filters out very short/empty files)
+            score_threshold: Minimum relevance score (0-1). Documents below this are filtered out.
+                           Start with 0.3 and adjust based on your results.
         
         Returns:
             List of tuples (document, matching_snippets)
         """
-        # Get more results than needed to filter out empty ones
+        # Get more results than needed to filter out low scores and empty ones
         fetch_k = k * 3 if self.filter_empty else k
-        results = self.vector_store.similarity_search(query, k=fetch_k)
+        
+        # CRITICAL FIX: Use similarity_search_with_score to get relevance scores
+        results_with_scores = self.vector_store.similarity_search_with_score(query, k=fetch_k)
+        
+        # Debug: Show scores to understand what's happening
+        if results_with_scores:
+            print(f"\n📊 Relevance scores for '{query}':")
+            for doc, score in results_with_scores[:5]:  # Show top 5 scores
+                filename = doc.metadata.get('filename', 'N/A')[:40]
+                print(f"   Score {score:.4f}: {filename}")
         
         enhanced_results = []
         
-        for doc in results:
+        for doc, score in results_with_scores:
+            # CRITICAL FIX: Skip documents with relevance score below threshold
+            if score < score_threshold:
+                continue
+            
             enhanced_doc = EnhancedDocument(
                 page_content=doc.page_content,
                 metadata=doc.metadata
@@ -251,7 +238,7 @@ class DocumentProcessor:
                 if len(enhanced_doc.page_content.strip()) < min_content_length:
                     continue
             
-            # Find matching snippets
+            # Find matching snippets for display
             if enhanced_doc.metadata.get('match_source') == 'file_content':
                 snippets = self.query_matcher.find_matching_snippets(
                     doc.page_content, 
@@ -270,6 +257,103 @@ class DocumentProcessor:
             if len(enhanced_results) >= k:
                 break
         
+        # Provide feedback if no results due to threshold
+        if not enhanced_results and results_with_scores:
+            max_score = max(score for _, score in results_with_scores) if results_with_scores else 0
+            print(f"\n⚠️  Found {len(results_with_scores)} potential results but none above threshold ({score_threshold})")
+            print(f"   Highest relevance score was: {max_score:.4f}")
+            print(f"   Try lowering the score_threshold or check your embedding model")
+            print(f"   Example: Use 'score_threshold=0.1' for more results")
+        
         return enhanced_results
+    
+    
+    def debug_search(self, query: str, k: int = 10) -> None:
+        """
+        Debug method to show detailed search information.
+        
+        Args:
+            query: Search query
+            k: Number of results to show
+        """
+        print(f"\n🔍 DEBUG SEARCH for: '{query}'")
+        print("=" * 60)
+        
+        # Get raw results with scores
+        results_with_scores = self.vector_store.similarity_search_with_score(query, k=k)
+        
+        if not results_with_scores:
+            print("No results found!")
+            return
+        
+        print(f"\nFound {len(results_with_scores)} results:\n")
+        
+        for i, (doc, score) in enumerate(results_with_scores, 1):
+            print(f"{i}. Score: {score:.6f}")
+            print(f"   Filename: {doc.metadata.get('filename', 'N/A')}")
+            print(f"   Filepath: {doc.metadata.get('filepath', 'N/A')}")
+            print(f"   Type: {doc.metadata.get('type', 'unknown')}")
+            print(f"   Content preview: {doc.page_content[:150]}...")
+            print(f"   Content length: {len(doc.page_content)} chars")
+            print("-" * 60)
 
 
+# Test function to verify the processor works correctly
+def test_processor():
+    """Test the DocumentProcessor with a simple example."""
+    import tempfile
+    import shutil
+    
+    print("\n" + "=" * 60)
+    print("TESTING DOCUMENT PROCESSOR")
+    print("=" * 60)
+    
+    # Create temporary directory for testing
+    test_dir = tempfile.mkdtemp()
+    db_path = tempfile.mkdtemp()
+    
+    try:
+        # Create test files
+        test_file = os.path.join(test_dir, "test.txt")
+        with open(test_file, 'w') as f:
+            f.write("This is a test document about Python programming and machine learning.")
+        
+        # Initialize processor
+        processor = DocumentProcessor(
+            db_path=db_path,
+            embed_model="Qwen3-Embedding:8B",
+            use_bert=False  # Use Ollama for testing
+        )
+        
+        # Add test file
+        print("\n📁 Adding test file to database...")
+        processor.add_files_from_directory(test_dir)
+        
+        # Test search
+        print("\n🔍 Testing search functionality...")
+        results = processor.search("python programming", k=3, score_threshold=0.1)
+        
+        if results:
+            print(f"\n✅ Search successful! Found {len(results)} results")
+            for doc, snippets in results:
+                print(f"   - {doc.metadata.get('filename')} (score-based match)")
+        else:
+            print("\n⚠️  No results found. Trying debug mode...")
+            processor.debug_search("python programming")
+        
+        # Test embedding quality
+        print("\n📊 Testing embedding quality...")
+        test_embedding = processor.smart_embedder.embed_query("test query")
+        print(f"   Embedding dimension: {len(test_embedding)}")
+        print(f"   Non-zero values: {sum(1 for v in test_embedding if v != 0)}/{len(test_embedding)}")
+        
+    finally:
+        # Cleanup
+        shutil.rmtree(test_dir, ignore_errors=True)
+        shutil.rmtree(db_path, ignore_errors=True)
+        print("\n🧹 Test cleanup complete")
+
+
+if __name__ == "__main__":
+    # Run test when script is executed directly
+    test_processor()

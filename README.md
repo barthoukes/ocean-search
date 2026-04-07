@@ -1,5 +1,14 @@
 # ocean-search
 Search engine based on Python/AI with a vector database.
+
+Todo:
+1) **Add meta data**, like the age of the file, the name of the files, directory, writers etc.
+2) **Advanced Query Parsing**: Implement more sophisticated query parsing to handle complex natural language queries.
+3) **Error Handling**: Add error handling for cases where the query cannot be parsed.
+4) **Performance**: Optimize the search process to handle large datasets efficiently.
+5) **CAD**: Extend with CAD files.
+6) **Website**: Extend with a nice website.
+
 <img width="1200" height="896" alt="openart-image_1774458048054_958a80e8_1774458048112_2e92ee08" src="https://github.com/user-attachments/assets/1a8a5cda-177d-4c23-a31c-45a53138e468" />
 
 # Start program

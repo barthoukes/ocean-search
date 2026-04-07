@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+venv/
+env/
+.venv/
+backend/chroma_db/
+backend/*.db
+
+# Angular
+frontend/.angular/
+frontend/node_modules/
+frontend/dist/
+frontend/.cache/
+
+# IDE
+.vscode/
+.idea/
+.DS_Store

@@ -373,6 +373,40 @@ class DocumentProcessor:
         return f"{size_bytes:.1f} TB"
 
 
+    def add_file(self, file_path: str) -> bool:
+        """
+        Add a single file to the vector database.
+    
+        Args:
+            file_path: Path to the file to add
+    
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Process the file
+            doc = self.process_file(file_path)
+        
+            if doc:
+                # Add to vector store
+                self.vector_store.add_documents([doc])
+            
+                # Track statistics
+                if doc.metadata.get('embedding_type') == 'bert':
+                    print(f"   🧠 BERT embedded")
+                else:
+                    print(f"   🔧 Ollama embedded")
+            
+                return True
+            else:
+                # Empty file or unsupported
+                return False
+            
+        except Exception as e:
+            print(f"   ❌ Error: {e}")
+            return False
+
+
 # Test function to verify the processor works correctly
 def test_processor():
     """Test the DocumentProcessor with a simple example."""

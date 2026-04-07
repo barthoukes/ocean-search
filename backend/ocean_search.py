@@ -3,7 +3,7 @@
 file_search.py
 Interactive tool to fill and query a vector database of files.
 Commands:
-  fill <path>   - add documents from <path> to the database
+  fill <path> --exclude <path names>  - add documents from <path> to the database
   clear         - delete all documents from the database
   <query>       - search for files matching the query
   q             - quit
@@ -131,6 +131,94 @@ def clear_database(db_path: str, processor: DocumentProcessor) -> bool:
         return False
 
 
+def cmd_fill(path_str, processor):
+    """
+    Handle fill command: add documents from directory to database
+    
+    Args:
+        path_str: The path string from user input (may include exclusions after --)
+        processor: DocumentProcessor instance
+    """
+    # Parse path and exclusions
+    parts = path_str.strip().split()
+    
+    # First part is the path
+    path = parts[0] if parts else None
+    
+    # Check for -- or --exclude flag for exclusions
+    exclude_dirs = []
+    if len(parts) > 1:
+        if '--' in parts:
+            exclude_idx = parts.index('--')
+            exclude_dirs = parts[exclude_idx + 1:]
+        elif '--exclude' in parts:
+            exclude_idx = parts.index('--exclude')
+            exclude_dirs = parts[exclude_idx + 1:]
+    
+    # Validate path
+    if not path:
+        print("❌ Error: No path specified")
+        print("   Usage: fill <path> [--exclude dir1 dir2 ...]")
+        return
+    
+    if not os.path.isdir(path):
+        print(f"❌ Error: '{path}' is not a valid directory")
+        return
+    
+    # Default exclusions
+    default_excludes = {
+        '__pycache__', 'node_modules', '.git', 'venv', '.venv', 'env',
+        'dist', 'build', '.angular', '.cache', '.idea', '.vscode',
+        'python3.12', 'python3.11', 'python3.10', 'python3.9',
+        'lib/python3', 'local/lib/python', '__pycache__'
+    }
+    
+    # Add user exclusions
+    all_excludes = default_excludes.union(set(exclude_dirs))
+    
+    print(f"📂 Scanning: {path}")
+    print(f"🚫 Excluding: {', '.join(sorted(all_excludes))}")
+    
+    # Walk through directory
+    files_processed = 0
+    files_skipped = 0
+    dirs_skipped = 0
+    
+    for root, dirs, files in os.walk(path):
+        # Filter out excluded directories (modify dirs in-place)
+        original_dir_count = len(dirs)
+        dirs[:] = [d for d in dirs if d not in all_excludes]
+        dirs_skipped += (original_dir_count - len(dirs))
+        
+        for file in files:
+            filepath = os.path.join(root, file)
+            print(filepath)
+ 
+            # Skip excluded file patterns
+            if any(file.endswith(ext) for ext in ['.pyc', '.bak', '.pyo', '.so', '.dll', '.exe']):
+                files_skipped += 1
+                continue
+            
+            # Process the file
+            try:
+                print(f"  📄 {filepath}")
+                # Call your existing method
+                print(f"  📄 {filepath}")
+                if processor.add_file(filepath):
+                    files_processed += 1
+            except Exception as e:
+                print(f"  ⚠️  Error processing {file}: {e}")
+                files_skipped += 1
+    
+    # Print summary
+    print(f"\n✅ Fill completed!")
+    print(f"   📁 Files processed: {files_processed}")
+    if files_skipped > 0:
+        print(f"   ⏭️  Files skipped: {files_skipped}")
+    if dirs_skipped > 0:
+        print(f"   📁 Directories skipped: {dirs_skipped}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Interactive document search with Ollama embeddings and optional BERT for text.")
     parser.add_argument("--db_path", default="./chroma_db", help="Path to Chroma DB")
@@ -164,7 +252,7 @@ def main():
     print("🔍 Interactive Document Search with Smart Embedding")
     print("=" * 60)
     print("Commands:")
-    print("  fill <path>   - add documents from <path> to the database")
+    print("  fill <path> --exclude <paths>  - add documents from <path> and not in exclude paths to the database")
     print("  clear         - delete ALL documents from the database")
     print("  stats         - show database statistics")
     print("  <query>       - search for documents matching the query")
@@ -199,13 +287,10 @@ def main():
                 break
             
             # Check for fill command
-            if user_input.lower().startswith("fill "):
-                path = user_input[5:].strip()
-                if not os.path.isdir(path):
-                    print(f"Error: '{path}' is not a valid directory.")
-                    continue
-                processor.add_files_from_directory(path)
-            
+            if user_input.lower().startswith('fill '):
+                cmd_fill(user_input[5:], processor)  # Note: [5:] to skip 'fill '
+                continue
+ 
             # Check for stats command
             elif user_input.lower() == 'stats':
                 try:

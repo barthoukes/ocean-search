@@ -1,6 +1,12 @@
 langchain
 langchain-ollama
 langchain-chroma
+qdrant-client
+langchain-qdrant
 pandas
 pypdf
+scikit-learn
+flask
+flask-cors
+sentence-transformers
 

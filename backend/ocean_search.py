@@ -134,10 +134,10 @@ def clear_database(db_path: str, processor: DocumentProcessor) -> bool:
 def main():
     parser = argparse.ArgumentParser(description="Interactive document search with Ollama embeddings and optional BERT for text.")
     parser.add_argument("--db_path", default="./chroma_db", help="Path to Chroma DB")
-    parser.add_argument("--embed_model", default="Qwen3-Embedding:8B", help="Ollama embedding model (fallback)")
+    parser.add_argument("--embed_model", default="nomic-embed-text-v2-moe", help="Ollama embedding model (fallback)")
     parser.add_argument("--extensions", nargs="+", default=None,
                         help="File extensions to include when filling (e.g., .txt .pdf .py)")
-    parser.add_argument("--k", type=int, default=5, help="Number of results to return per query")
+    parser.add_argument("--k", type=int, default=10, help="Number of results to return per query")
     parser.add_argument("--verbose", action="store_true", help="Show full content preview")
     parser.add_argument("--no-bert", action="store_true", help="Disable BERT for text files (use Ollama only)")
     parser.add_argument("--no-color", action="store_true", help="Disable colored highlighting")

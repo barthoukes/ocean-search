@@ -35,7 +35,8 @@ class DocumentProcessor:
         
         # Create Ollama embeddings
         self.ollama_embeddings = OllamaEmbeddings(model=embed_model)
-        
+   
+        self.use_summaries = False      
         # Create smart embedder that chooses based on file type
         self.smart_embedder = SmartEmbedder(self.ollama_embeddings, use_bert)
         
@@ -112,27 +113,6 @@ class DocumentProcessor:
         return loaders
     
     
-    def process_file(self, file_path: str) -> Optional[EnhancedDocument]:
-        """Process a single file using the appropriate loader."""
-        for loader in self.loaders:
-            if loader.can_handle(file_path):
-                doc = loader.load_document(file_path)
-                if doc:
-                    enhanced_doc = EnhancedDocument(
-                        page_content=doc.page_content,
-                        metadata=doc.metadata
-                    )
-                    
-                    # Skip empty files during indexing (optional)
-                    if enhanced_doc.is_empty():
-                        self.empty_files_count += 1
-                        # Optionally skip adding empty files to database
-                        return None
-                    
-                    return enhanced_doc
-        return None
-    
-    
     def add_files_from_directory(self, directory: str) -> None:
         """Walk through directory and add all supported files to the vector store."""
         documents = []
@@ -190,7 +170,7 @@ class DocumentProcessor:
             print(f"   ⚠️  Skipped {failed} unsupported files")
     
     
-    def search(self, query: str, k: int = 5, min_content_length: int = 10, score_threshold: float = 0.3) -> List[Tuple[EnhancedDocument, List[Dict[str, Any]]]]:
+    def search(self, query: str, k: int = 10, min_content_length: int = 10, score_threshold: float = 0.1) -> List[Tuple[EnhancedDocument, List[Dict[str, Any]]]]:
         """
         Search for documents and find matching snippets.
         
@@ -213,7 +193,7 @@ class DocumentProcessor:
         # Debug: Show scores to understand what's happening
         if results_with_scores:
             print(f"\n📊 Relevance scores for '{query}':")
-            for doc, score in results_with_scores[:5]:  # Show top 5 scores
+            for doc, score in results_with_scores[:k]:  # Show top k scores
                 filename = doc.metadata.get('filename', 'N/A')[:40]
                 print(f"   Score {score:.4f}: {filename}")
         
@@ -297,6 +277,101 @@ class DocumentProcessor:
             print(f"   Content length: {len(doc.page_content)} chars")
             print("-" * 60)
 
+    def _get_file_stats(self, file_path: str) -> Dict[str, Any]:
+        """
+        Extract comprehensive file statistics.
+        
+        Args:
+            file_path: Path to the file
+            
+        Returns:
+            Dictionary with file metadata
+        """
+        try:
+            stat = os.stat(file_path)
+            path_obj = Path(file_path)
+            
+            stats = {
+                'size_bytes': stat.st_size,
+                'created_time': stat.st_ctime,
+                'modified_time': stat.st_mtime,
+                'accessed_time': stat.st_atime,
+                'file_extension': path_obj.suffix.lower(),
+                'file_name': path_obj.name,
+                'file_name_stem': path_obj.stem,
+                'parent_dir': str(path_obj.parent),
+                'is_symlink': os.path.islink(file_path),
+                'permissions': oct(stat.st_mode)[-3:],
+            }
+            
+            # Add human-readable dates
+            stats['created_date'] = datetime.fromtimestamp(stat.st_ctime).isoformat()
+            stats['modified_date'] = datetime.fromtimestamp(stat.st_mtime).isoformat()
+            
+            # Check if file is binary (simple heuristic)
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    f.read(1024)
+                stats['is_text'] = True
+            except (UnicodeDecodeError, IOError):
+                stats['is_text'] = False
+            
+            # Add file age in days
+            stats['age_days'] = (time.time() - stat.st_ctime) / 86400
+            
+            return stats
+            
+        except Exception as e:
+            print(f"⚠️  Could not read file stats for {file_path}: {e}")
+            return {}
+    
+    
+    def process_file(self, file_path: str) -> Optional[EnhancedDocument]:
+        """Process a single file using the appropriate loader."""
+        for loader in self.loaders:
+            if loader.can_handle(file_path):
+                doc = loader.load_document(file_path)
+                if doc:
+                    # Get file statistics
+                    file_stats = self._get_file_stats(file_path)
+                    
+                    # Generate summary if enabled
+                    summary = None
+                    if self.use_summaries and doc.page_content:
+                        print(f"   📝 Generating summary for {os.path.basename(file_path)}...")
+                        summary = self.summarizer.generate_summary(doc)
+                    
+                    # Enhance metadata with file stats
+                    enhanced_metadata = doc.metadata.copy()
+                    enhanced_metadata.update({
+                        'size_human': self._format_size(file_stats.get('size_bytes', 0)),
+                        'age_days': round(file_stats.get('age_days', 0), 1),
+                        'is_recent': file_stats.get('age_days', 999) < 30,
+                    })
+                    
+                    enhanced_doc = EnhancedDocument(
+                        page_content=doc.page_content,
+                        metadata=enhanced_metadata,
+                        summary=summary,
+                        file_stats=file_stats
+                    )
+                    
+                    if enhanced_doc.is_empty():
+                        self.empty_files_count += 1
+                        return None
+                    
+                    return enhanced_doc
+        return None
+    
+    
+    def _format_size(self, size_bytes: int) -> str:
+        """Format file size for human readability."""
+        for unit in ['B', 'KB', 'MB', 'GB']:
+            if size_bytes < 1024.0:
+                return f"{size_bytes:.1f} {unit}"
+            size_bytes /= 1024.0
+        return f"{size_bytes:.1f} TB"
+
 
 # Test function to verify the processor works correctly
 def test_processor():
@@ -321,7 +396,8 @@ def test_processor():
         # Initialize processor
         processor = DocumentProcessor(
             db_path=db_path,
-            embed_model="Qwen3-Embedding:8B",
+            #embed_model="Qwen3-Embedding:8B",
+            embed_model="nomic-embed-text:latest",
             use_bert=False  # Use Ollama for testing
         )
         

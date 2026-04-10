@@ -6,6 +6,8 @@ Commands:
   fill <path> --exclude <path names>  - add documents from <path> to the database
   clear         - delete all documents from the database
   <query>       - search for files matching the query
+  n, next       - next page of results
+  p, prev       - previous page of results
   q             - quit
 """
 
@@ -25,6 +27,18 @@ except ImportError:
 from document_processor import DocumentProcessor
 from query_matcher import QueryMatcher
 
+
+class SearchState:
+    """Store pagination state for the current search"""
+    def __init__(self):
+        self.query: str = ""
+        self.current_page: int = 1
+        self.page_size: int = 10
+        self.total_results: int = 0
+        self.total_pages: int = 0
+        self.results: List[Tuple] = []
+        self.pagination_info: Dict[str, Any] = {}
+        
 
 def clear_database(db_path: str, processor: DocumentProcessor) -> bool:
     """
@@ -201,7 +215,6 @@ def cmd_fill(path_str, processor):
             
             # Process the file
             try:
-                print(f"  📄 {filepath}")
                 # Call your existing method
                 print(f"  📄 {filepath}")
                 if processor.add_file(filepath):
@@ -219,13 +232,162 @@ def cmd_fill(path_str, processor):
         print(f"   📁 Directories skipped: {dirs_skipped}")
 
 
+def display_search_results(results, query, args, pagination_info=None):
+    """
+    Display search results with pagination information.
+    
+    Args:
+        results: List of (doc, snippets) tuples
+        query: Search query string
+        args: Command line arguments
+        pagination_info: Dictionary with pagination metadata
+    """
+    if not results:
+        print("   No results found.")
+        return
+    
+    if pagination_info:
+        print(f"\n📋 Page {pagination_info['current_page']}/{pagination_info['total_pages']} - {pagination_info['total_results']} total results")
+    else:
+        print(f"\n📋 Top {len(results)} results for: \"{query}\"")
+    
+    print("=" * 60)
+    
+    for i, (doc, snippets) in enumerate(results, 1):
+        # Calculate global result number if paginated
+        if pagination_info:
+            global_num = pagination_info['start_index'] + i - 1
+            print(f"\n{global_num}. {doc.metadata.get('filename', 'N/A')}")
+        else:
+            print(f"\n{i}. {doc.metadata.get('filename', 'N/A')}")
+        
+        print(f"   📂 Path: {doc.metadata.get('filepath', 'N/A')}")
+        print(f"   🏷️  Type: {doc.get_file_type_display()}")
+        print(f"   🔍 Match: {doc.get_match_type_display()}")
+        
+        # Show embedding type
+        embedder = doc.metadata.get('embedding_type', 'ollama')
+        if embedder == 'bert':
+            print(f"   🧠 Embedded with: BERT (semantic search)")
+        else:
+            print(f"   🔧 Embedded with: Ollama")
+        
+        # Additional metadata based on file type
+        if doc.metadata.get('type') == 'code':
+            print(f"   📊 Stats: {doc.metadata.get('lines_code', 0)} lines of code, "
+                  f"{doc.metadata.get('lines_comments', 0)} comments")
+        elif doc.metadata.get('type') == 'pdf':
+            if doc.metadata.get('has_text_content', False):
+                print(f"   📄 Contains {doc.metadata.get('pages', 0)} pages with extractable text")
+            else:
+                print(f"   ⚠️  PDF has {doc.metadata.get('pages', 0)} pages but no extractable text")
+        elif doc.metadata.get('type') == 'image':
+            print(f"   📐 Dimensions: {doc.metadata.get('width', '?')}x{doc.metadata.get('height', '?')}")
+        
+        # Show matching snippets with highlighting
+        if snippets:
+            print(f"\n   🎯 Matching Text Snippets:")
+            for j, snippet_info in enumerate(snippets[:3], 1):
+                snippet = snippet_info['snippet']
+                matched_terms = snippet_info['matched_terms']
+                match_type = snippet_info.get('match_type', 'keywords')
+                
+                # Highlight the snippet
+                if not args.no_color:
+                    highlighted = QueryMatcher.highlight_text(snippet, query)
+                else:
+                    highlighted = snippet
+                
+                # Clean up newlines
+                highlighted = highlighted.replace('\n', ' ')
+                
+                # Show match info
+                match_icon = "🔍" if match_type == 'exact_phrase' else "📌"
+                terms_display = ", ".join(matched_terms[:5])
+                print(f"      {match_icon} [{j}] {highlighted}")
+                print(f"          Matched: {terms_display}")
+                print()
+        else:
+            # If no snippets found, show a preview
+            if args.verbose:
+                preview = doc.page_content[:200].replace('\n', ' ')
+            else:
+                preview = doc.page_content[:150].replace('\n', ' ')
+            if preview:
+                print(f"\n   📝 Content Preview: {preview}...")
+        
+        # Add separator
+        if i < len(results):
+            print("   " + "-" * 50)
+    
+    # Show pagination controls
+    if pagination_info:
+        print("\n" + "=" * 60)
+        print(f"Showing {pagination_info['start_index']}-{pagination_info['end_index']} of {pagination_info['total_results']} results")
+        
+        controls = []
+        if pagination_info['has_prev']:
+            controls.append("← Previous page (p, prev, pageup)")
+        if pagination_info['has_next']:
+            controls.append("→ Next page (n, next, pagedown)")
+        
+        if controls:
+            print("   " + "  |  ".join(controls))
+        print("   Type 'q' to quit, or enter a new search query")
+
+        
+def perform_search(processor, query, page, page_size, args):
+    """
+    Perform a search with pagination.
+    
+    Returns:
+        Tuple of (results, pagination_info)
+    """
+    offset = (page - 1) * page_size
+    
+    # Use the search method with offset
+    results = processor.search(
+        query=query,
+        k=page_size,
+        offset=offset,
+        min_content_length=10,
+        score_threshold=0.1,
+        max_total=1000
+    )
+    
+    # Get total count by doing a separate search without offset
+    all_results = processor.search(
+        query=query,
+        k=1000,
+        offset=0,
+        min_content_length=10,
+        score_threshold=0.1,
+        max_total=1000
+    )
+    total_count = len(all_results)
+    total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 1
+    
+    pagination_info = {
+        'current_page': page,
+        'page_size': page_size,
+        'total_results': total_count,
+        'total_pages': total_pages,
+        'has_next': page < total_pages,
+        'has_prev': page > 1,
+        'start_index': offset + 1 if results else 0,
+        'end_index': min(offset + page_size, total_count) if results else 0
+    }
+    
+    return results, pagination_info
+        
+        
 def main():
     parser = argparse.ArgumentParser(description="Interactive document search with Ollama embeddings and optional BERT for text.")
     parser.add_argument("--db_path", default="./chroma_db", help="Path to Chroma DB")
     parser.add_argument("--embed_model", default="nomic-embed-text-v2-moe", help="Ollama embedding model (fallback)")
     parser.add_argument("--extensions", nargs="+", default=None,
                         help="File extensions to include when filling (e.g., .txt .pdf .py)")
-    parser.add_argument("--k", type=int, default=10, help="Number of results to return per query")
+    parser.add_argument("--k", type=int, default=10, help="Number of results to return per page")
     parser.add_argument("--verbose", action="store_true", help="Show full content preview")
     parser.add_argument("--no-bert", action="store_true", help="Disable BERT for text files (use Ollama only)")
     parser.add_argument("--no-color", action="store_true", help="Disable colored highlighting")
@@ -252,10 +414,12 @@ def main():
     print("🔍 Interactive Document Search with Smart Embedding")
     print("=" * 60)
     print("Commands:")
-    print("  fill <path> --exclude <paths>  - add documents from <path> and not in exclude paths to the database")
+    print("  fill <path> --exclude <paths>  - add documents from <path> to database")
     print("  clear         - delete ALL documents from the database")
     print("  stats         - show database statistics")
     print("  <query>       - search for documents matching the query")
+    print("  n, next       - next page of results")
+    print("  p, prev       - previous page of results")
     print("  q             - quit")
     print("\nSupported extensions: " + ", ".join(sorted(all_extensions)))
     
@@ -275,20 +439,56 @@ def main():
     
     print("\n💡 Tip: Results show highlighted matching text to verify relevance")
     print("   🟢 Green = exact phrase match, 🟡 Yellow = keyword match")
+    print("   Use 'n' for next page, 'p' for previous page")
     print()
+    
+    # Initialize search state
+    search_state = SearchState()
     
     while True:
         try:
             user_input = input("\n> ").strip()
             if not user_input:
                 continue
+            
+            # Quit command
             if user_input.lower() == 'q':
                 print("Exiting.")
                 break
             
+            # Next page commands
+            if user_input.lower() in ['n', 'next', 'pagedown']:
+                if search_state.query and search_state.pagination_info.get('has_next', False):
+                    search_state.current_page += 1
+                    results, pagination_info = perform_search(
+                        processor, search_state.query, 
+                        search_state.current_page, args.k, args
+                    )
+                    search_state.results = results
+                    search_state.pagination_info = pagination_info
+                    display_search_results(results, search_state.query, args, pagination_info)
+                else:
+                    print("   No next page available. Perform a search first.")
+                continue
+            
+            # Previous page commands
+            if user_input.lower() in ['p', 'prev', 'pageup']:
+                if search_state.query and search_state.pagination_info.get('has_prev', False):
+                    search_state.current_page -= 1
+                    results, pagination_info = perform_search(
+                        processor, search_state.query, 
+                        search_state.current_page, args.k, args
+                    )
+                    search_state.results = results
+                    search_state.pagination_info = pagination_info
+                    display_search_results(results, search_state.query, args, pagination_info)
+                else:
+                    print("   No previous page available.")
+                continue
+            
             # Check for fill command
             if user_input.lower().startswith('fill '):
-                cmd_fill(user_input[5:], processor)  # Note: [5:] to skip 'fill '
+                cmd_fill(user_input[5:], processor)
                 continue
  
             # Check for stats command
@@ -350,75 +550,17 @@ def main():
             
             else:
                 # Treat as query
-                results = processor.search(user_input, k=args.k)
+                search_state.query = user_input
+                search_state.current_page = 1
                 
-                if not results:
-                    print("   No results found.")
-                    continue
+                results, pagination_info = perform_search(
+                    processor, user_input, 1, args.k, args
+                )
                 
-                print(f"\n📋 Top {len(results)} results for: \"{user_input}\"")
-                print("=" * 60)
+                search_state.results = results
+                search_state.pagination_info = pagination_info
                 
-                for i, (doc, snippets) in enumerate(results, 1):
-                    print(f"\n{i}. {doc.metadata.get('filename', 'N/A')}")
-                    print(f"   📂 Path: {doc.metadata.get('filepath', 'N/A')}")
-                    print(f"   🏷️  Type: {doc.get_file_type_display()}")
-                    print(f"   🔍 Match: {doc.get_match_type_display()}")
-                    
-                    # Show embedding type
-                    embedder = doc.metadata.get('embedding_type', 'ollama')
-                    if embedder == 'bert':
-                        print(f"   🧠 Embedded with: BERT (semantic search)")
-                    else:
-                        print(f"   🔧 Embedded with: Ollama")
-                    
-                    # Additional metadata based on file type
-                    if doc.metadata.get('type') == 'code':
-                        print(f"   📊 Stats: {doc.metadata.get('lines_code', 0)} lines of code, "
-                              f"{doc.metadata.get('lines_comments', 0)} comments")
-                    elif doc.metadata.get('type') == 'pdf':
-                        if doc.metadata.get('has_text_content', False):
-                            print(f"   📄 Contains {doc.metadata.get('pages', 0)} pages with extractable text")
-                        else:
-                            print(f"   ⚠️  PDF has {doc.metadata.get('pages', 0)} pages but no extractable text")
-                    elif doc.metadata.get('type') == 'image':
-                        print(f"   📐 Dimensions: {doc.metadata.get('width', '?')}x{doc.metadata.get('height', '?')}")
-                    
-                    # Show matching snippets with highlighting
-                    if snippets:
-                        print(f"\n   🎯 Matching Text Snippets:")
-                        for j, snippet_info in enumerate(snippets[:3], 1):
-                            snippet = snippet_info['snippet']
-                            matched_terms = snippet_info['matched_terms']
-                            match_type = snippet_info.get('match_type', 'keywords')
-                            
-                            # Highlight the snippet
-                            if not args.no_color:
-                                highlighted = QueryMatcher.highlight_text(snippet, user_input)
-                            else:
-                                highlighted = snippet
-                            
-                            # Clean up newlines
-                            highlighted = highlighted.replace('\n', ' ')
-                            
-                            # Show match info
-                            match_icon = "🔍" if match_type == 'exact_phrase' else "📌"
-                            terms_display = ", ".join(matched_terms[:5])
-                            print(f"      {match_icon} [{j}] {highlighted}")
-                            print(f"          Matched: {terms_display}")
-                            print()
-                    else:
-                        # If no snippets found, show a preview
-                        if args.verbose:
-                            preview = doc.page_content[:200].replace('\n', ' ')
-                        else:
-                            preview = doc.page_content[:150].replace('\n', ' ')
-                        if preview:
-                            print(f"\n   📝 Content Preview: {preview}...")
-                    
-                    # Add separator
-                    if i < len(results):
-                        print("   " + "-" * 50)
+                display_search_results(results, user_input, args, pagination_info)
                         
         except KeyboardInterrupt:
             print("\n\nInterrupted. Exiting.")

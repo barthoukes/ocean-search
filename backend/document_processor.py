@@ -170,37 +170,19 @@ class DocumentProcessor:
             print(f"   ⚠️  Skipped {failed} unsupported files")
     
     
-    def search(self, query: str, k: int = 10, min_content_length: int = 10, score_threshold: float = 0.1) -> List[Tuple[EnhancedDocument, List[Dict[str, Any]]]]:
+    def search(self, query: str, k: int = 10, offset: int = 0, 
+               min_content_length: int = 10, score_threshold: float = 0.1,
+               max_total: int = 1000) -> List[Tuple[EnhancedDocument, List[Dict[str, Any]]]]:
         """
-        Search for documents and find matching snippets.
-        
-        Args:
-            query: Search query
-            k: Number of results to return
-            min_content_length: Minimum content length to consider (filters out very short/empty files)
-            score_threshold: Minimum relevance score (0-1). Documents below this are filtered out.
-                           Start with 0.3 and adjust based on your results.
-        
-        Returns:
-            List of tuples (document, matching_snippets)
+        Search for documents and find matching snippets with pagination support.
         """
-        # Get more results than needed to filter out low scores and empty ones
-        fetch_k = k * 3 if self.filter_empty else k
-        
-        # CRITICAL FIX: Use similarity_search_with_score to get relevance scores
+        fetch_k = min(max_total, offset + k + 100)
         results_with_scores = self.vector_store.similarity_search_with_score(query, k=fetch_k)
-        
-        # Debug: Show scores to understand what's happening
-        if results_with_scores:
-            print(f"\n📊 Relevance scores for '{query}':")
-            for doc, score in results_with_scores[:k]:  # Show top k scores
-                filename = doc.metadata.get('filename', 'N/A')[:40]
-                print(f"   Score {score:.4f}: {filename}")
-        
-        enhanced_results = []
+    
+        # Single loop - store results with their scores
+        all_filtered_results = []  # Each element: (enhanced_doc, snippets, score)
         
         for doc, score in results_with_scores:
-            # CRITICAL FIX: Skip documents with relevance score below threshold
             if score < score_threshold:
                 continue
             
@@ -209,43 +191,43 @@ class DocumentProcessor:
                 metadata=doc.metadata
             )
             
-            # Skip empty or very short files if filtering is enabled
             if self.filter_empty:
-                if enhanced_doc.is_empty():
+                if enhanced_doc.is_empty() or len(enhanced_doc.page_content.strip()) < min_content_length:
                     continue
-                
-                # Additional check: if content is too short, skip it
-                if len(enhanced_doc.page_content.strip()) < min_content_length:
-                    continue
-            
-            # Find matching snippets for display
+        
+            # Find matching snippets
             if enhanced_doc.metadata.get('match_source') == 'file_content':
-                snippets = self.query_matcher.find_matching_snippets(
-                    doc.page_content, 
-                    query
-                )
+                snippets = self.query_matcher.find_matching_snippets(doc.page_content, query)
             else:
-                # For metadata-only matches, show filename/path matches
-                filename = enhanced_doc.metadata.get('filename', '')
-                filepath = enhanced_doc.metadata.get('filepath', '')
-                combined = f"{filename} {filepath}"
-                snippets = self.query_matcher.find_matching_snippets(combined, query)
+                filename = doc.metadata.get('filename', '')
+                filepath = doc.metadata.get('filepath', '')
+                snippets = self.query_matcher.find_matching_snippets(f"{filename} {filepath}", query)
             
-            enhanced_results.append((enhanced_doc, snippets))
+            all_filtered_results.append((enhanced_doc, snippets, score))
             
-            # Stop when we have enough results
-            if len(enhanced_results) >= k:
+            if len(all_filtered_results) >= max_total:
                 break
+    
+        total_count = len(all_filtered_results)
+        paginated_results = all_filtered_results[offset:offset + k]
         
-        # Provide feedback if no results due to threshold
-        if not enhanced_results and results_with_scores:
-            max_score = max(score for _, score in results_with_scores) if results_with_scores else 0
-            print(f"\n⚠️  Found {len(results_with_scores)} potential results but none above threshold ({score_threshold})")
-            print(f"   Highest relevance score was: {max_score:.4f}")
-            print(f"   Try lowering the score_threshold or check your embedding model")
-            print(f"   Example: Use 'score_threshold=0.1' for more results")
+        # Display scores for current page
+        if paginated_results:
+            print(f"\n📊 Relevance scores for '{query}':")
+            for i, (doc, snippets, score) in enumerate(paginated_results, offset + 1):
+                filename = doc.metadata.get('filename', 'N/A')[:40]
+                print(f"   [{i}] Score {score:.4f}: {filename}")
+            
+            print(f"\n📄 Showing results {offset + 1}-{min(offset + k, total_count)} of {total_count} total")
+            
+            # Return without scores (backward compatible)
+            return [(doc, snippets) for doc, snippets, _ in paginated_results]
+        elif results_with_scores:
+            max_score = max(score for _, score in results_with_scores)
+            print(f"\n⚠️  Found {len(results_with_scores)} results but none above threshold ({score_threshold})")
+            print(f"   Highest score: {max_score:.4f}")
         
-        return enhanced_results
+        return []
     
     
     def debug_search(self, query: str, k: int = 10) -> None:

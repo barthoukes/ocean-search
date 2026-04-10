@@ -47,11 +47,11 @@
   </div>
 
   <!-- Navigation buttons -->
-  <div class="navigation-buttons">
+  <!-- div class="navigation-buttons">
     <button (click)="onPrevious()" [disabled]="currentPage === 1">Previous</button>
     <span>Page {{ currentPage }} of {{ totalPages }}</span>
     <button (click)="onNext()" [disabled]="currentPage === totalPages">Next</button>
-  </div>
+  </div -->
 
   <!-- Results section -->
   <div class="results-container" *ngIf="results.length > 0">
@@ -73,7 +73,6 @@
         </span>
         <span class="match-type">{{ result.match_type }}</span>
       </div>
-    </div>
   </div>
 
   <!-- No results -->

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Navigate to Angular project directory
-cd "$(dirname "$0")/../ocean-search-ui" || {
+cd "$(dirname "$0")/frontend" || {
     echo "❌ Could not find ocean-search-ui directory"
     exit 1
 }

@@ -46,6 +46,13 @@
     </div>
   </div>
 
+  <!-- Navigation buttons -->
+  <div class="navigation-buttons">
+    <button (click)="onPrevious()" [disabled]="currentPage === 1">Previous</button>
+    <span>Page {{ currentPage }} of {{ totalPages }}</span>
+    <button (click)="onNext()" [disabled]="currentPage === totalPages">Next</button>
+  </div>
+
   <!-- Results section -->
   <div class="results-container" *ngIf="results.length > 0">
     <div class="results-stats">
@@ -61,7 +68,6 @@
         </span>
         <span *ngIf="!result.snippets.length">{{ result.content_preview }}...</span>
       </div>
-      <div class="result-meta">
         <span class="badge" [class.bert]="result.embedding_type === 'bert'">
           {{ result.embedding_type === 'bert' ? '🧠 Semantic' : '🔧 Vector' }}
         </span>

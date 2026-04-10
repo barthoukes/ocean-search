@@ -384,7 +384,8 @@ def perform_search(processor, query, page, page_size, args):
 def main():
     parser = argparse.ArgumentParser(description="Interactive document search with Ollama embeddings and optional BERT for text.")
     parser.add_argument("--db_path", default="./chroma_db", help="Path to Chroma DB")
-    parser.add_argument("--embed_model", default="nomic-embed-text-v2-moe", help="Ollama embedding model (fallback)")
+    #parser.add_argument("--embed_model", default="nomic-embed-text-v2-moe", help="Ollama embedding model (fallback)")
+    parser.add_argument("--embed_model", default="embeddinggemma:300m", help="Ollama embedding model (fallback)")
     parser.add_argument("--extensions", nargs="+", default=None,
                         help="File extensions to include when filling (e.g., .txt .pdf .py)")
     parser.add_argument("--k", type=int, default=10, help="Number of results to return per page")

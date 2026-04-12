@@ -16,7 +16,7 @@ import argparse
 import sys
 import shutil
 import time
-from typing import List, Set
+from typing import List, Set, Tuple, Dict, Any
 from langchain_chroma import Chroma
 # Check if BERT is available
 try:
@@ -26,6 +26,7 @@ except ImportError:
 
 from document_processor import DocumentProcessor
 from query_matcher import QueryMatcher
+from datetime import datetime
 
 
 class SearchState:
@@ -263,6 +264,53 @@ def display_search_results(results, query, args, pagination_info=None):
         
         print(f"   📂 Path: {doc.metadata.get('filepath', 'N/A')}")
         print(f"   🏷️  Type: {doc.get_file_type_display()}")
+        
+        # Display file size information
+        size_bytes = doc.metadata.get('size_bytes', 0)
+        size_human = doc.metadata.get('size_human', 'N/A')
+        size_category = doc.metadata.get('size_category', 'unknown')
+        
+        # Choose icon based on size category
+        size_icons = {
+            'tiny': '🔹', 'very_small': '📄', 'small': '📄',
+            'medium': '📘', 'large': '📚', 'very_large': '📦'
+        }
+        size_icon = size_icons.get(size_category, '📄')
+        
+        print(f"   💾 Size: {size_human} ({size_bytes:,} bytes) {size_icon} [{size_category}]")
+        
+        # Display date information
+        created_date = doc.metadata.get('created_date_human', doc.metadata.get('created_date', 'N/A'))
+        modified_date = doc.metadata.get('modified_date_human', doc.metadata.get('modified_date', 'N/A'))
+        age_days = doc.metadata.get('age_days', 0)
+        is_recent = doc.metadata.get('is_recent', False)
+        is_old = doc.metadata.get('is_old', False)
+        
+        # Choose age indicator
+        if is_recent:
+            age_icon = "🆕"
+        elif is_old:
+            age_icon = "📅"
+        else:
+            age_icon = "📆"
+        
+        print(f"   🕐 Created: {created_date}")
+        print(f"   🕐 Modified: {modified_date}")
+        print(f"   ⏰ Age: {age_days:.1f} days old {age_icon}")
+        
+        # Display content statistics if available
+        word_count = doc.metadata.get('word_count', 0)
+        if word_count > 0:
+            char_count = doc.metadata.get('char_count', 0)
+            line_count = doc.metadata.get('line_count', 0)
+            print(f"   📝 Content: {word_count:,} words, {char_count:,} chars, {line_count:,} lines")
+        
+        # Display complexity for code files
+        complexity = doc.metadata.get('complexity_score', 0)
+        if complexity > 0:
+            complexity_stars = "⭐" * min(5, int(complexity / 20))
+            print(f"   🔧 Complexity: {complexity:.1f} {complexity_stars}")
+        
         print(f"   🔍 Match: {doc.get_match_type_display()}")
         
         # Show embedding type
@@ -274,13 +322,16 @@ def display_search_results(results, query, args, pagination_info=None):
         
         # Additional metadata based on file type
         if doc.metadata.get('type') == 'code':
-            print(f"   📊 Stats: {doc.metadata.get('lines_code', 0)} lines of code, "
+            print(f"   📊 Code Stats: {doc.metadata.get('lines_code', 0)} lines of code, "
                   f"{doc.metadata.get('lines_comments', 0)} comments")
+            print(f"   🎯 Lexical Diversity: {doc.metadata.get('lexical_diversity', 0):.2f}")
+        
         elif doc.metadata.get('type') == 'pdf':
             if doc.metadata.get('has_text_content', False):
                 print(f"   📄 Contains {doc.metadata.get('pages', 0)} pages with extractable text")
             else:
                 print(f"   ⚠️  PDF has {doc.metadata.get('pages', 0)} pages but no extractable text")
+        
         elif doc.metadata.get('type') == 'image':
             print(f"   📐 Dimensions: {doc.metadata.get('width', '?')}x{doc.metadata.get('height', '?')}")
         
@@ -379,8 +430,101 @@ def perform_search(processor, query, page, page_size, args):
     }
     
     return results, pagination_info
+
+
+def show_database_stats(processor: DocumentProcessor, db_path):
+    """Display detailed database statistics including file sizes and dates."""
+    print("\n" + "=" * 60)
+    print("📊 DATABASE STATISTICS")
+    print("=" * 60)
+    
+    try:
+        # Get all documents (you might need to implement a method to get all docs)
+        # For now, we'll do a broad search
+        all_results = processor.search(
+            query="",
+            k=1000,
+            offset=0,
+            score_threshold=0.0,  # Very low threshold to get everything
+            max_total=10000
+        )
         
+        if not all_results:
+            print("No documents in database.")
+            return
         
+        total_files = len(all_results)
+        total_size_bytes = 0
+        oldest_file = None
+        newest_file = None
+        oldest_date = float('inf')
+        newest_date = 0
+        
+        size_categories = {}
+        file_types = {}
+        
+        for doc, _ in all_results:
+            # Size statistics
+            size_bytes = doc.metadata.get('size_bytes', 0)
+            total_size_bytes += size_bytes
+            
+            size_cat = doc.metadata.get('size_category', 'unknown')
+            size_categories[size_cat] = size_categories.get(size_cat, 0) + 1
+            
+            # File type statistics
+            file_type = doc.metadata.get('type', 'unknown')
+            file_types[file_type] = file_types.get(file_type, 0) + 1
+            
+            # Date statistics
+            created_time = doc.metadata.get('created_time', 0)
+            if created_time and created_time < oldest_date:
+                oldest_date = created_time
+                oldest_file = doc.metadata.get('filename', 'N/A')
+            if created_time and created_time > newest_date:
+                newest_date = created_time
+                newest_file = doc.metadata.get('filename', 'N/A')
+        
+        # Display results
+        print(f"\n📁 Total files: {total_files}")
+        print(f"💾 Total size: {format_size(total_size_bytes)}")
+        print(f"📊 Average size: {format_size(total_size_bytes / total_files)}")
+        
+        print(f"\n📏 Size Distribution:")
+        for category in ['tiny', 'very_small', 'small', 'medium', 'large', 'very_large']:
+            count = size_categories.get(category, 0)
+            if count > 0:
+                bar = "█" * min(40, count)
+                print(f"   {category:12} : {count:4} files {bar}")
+        
+        print(f"\n📄 File Type Distribution:")
+        for ftype, count in sorted(file_types.items(), key=lambda x: x[1], reverse=True):
+            percentage = (count / total_files) * 100
+            bar = "█" * min(40, int(percentage))
+            print(f"   {ftype:12} : {count:4} files ({percentage:.1f}%) {bar}")
+        
+        if oldest_file:
+            oldest_date_str = datetime.fromtimestamp(oldest_date).strftime('%Y-%m-%d %H:%M:%S')
+            print(f"\n🕐 Oldest file: {oldest_file} ({oldest_date_str})")
+        
+        if newest_file:
+            newest_date_str = datetime.fromtimestamp(newest_date).strftime('%Y-%m-%d %H:%M:%S')
+            print(f"🕐 Newest file: {newest_file} ({newest_date_str})")
+        
+        print("\n" + "=" * 60)
+        
+    except Exception as e:
+        print(f"❌ Error getting statistics: {e}")
+
+
+def format_size(size_bytes):
+    """Format file size for human readability."""
+    for unit in ['B', 'KB', 'MB', 'GB']:
+        if size_bytes < 1024.0:
+            return f"{size_bytes:.1f} {unit}"
+        size_bytes /= 1024.0
+    return f"{size_bytes:.1f} TB"
+
+
 def main():
     parser = argparse.ArgumentParser(description="Interactive document search with Ollama embeddings and optional BERT for text.")
     parser.add_argument("--db_path", default="./chroma_db", help="Path to Chroma DB")
@@ -393,6 +537,7 @@ def main():
     parser.add_argument("--no-bert", action="store_true", help="Disable BERT for text files (use Ollama only)")
     parser.add_argument("--no-color", action="store_true", help="Disable colored highlighting")
     parser.add_argument("--force", action="store_true", help="Skip confirmation when clearing database")
+    parser.add_argument("--stats", action="store_true", help="Show database statistics and exit")
     args = parser.parse_args()
     
     # Disable colors if requested
@@ -400,12 +545,18 @@ def main():
         os.environ['NO_COLOR'] = '1'
     
     # Create document processor
+    print("Create document processor")
     processor = DocumentProcessor(
         args.db_path, 
         args.embed_model, 
         args.extensions,
         use_bert=not args.no_bert
     )
+    
+    # Check if stats flag is set (do this before showing interactive UI)
+    if args.stats:
+        show_database_stats(processor, args.db_path)
+        return
     
     # Get all supported extensions
     all_extensions: Set[str] = set()
@@ -494,21 +645,8 @@ def main():
  
             # Check for stats command
             elif user_input.lower() == 'stats':
-                try:
-                    # Try to get collection count
-                    if hasattr(processor.vector_store, '_collection'):
-                        try:
-                            count = processor.vector_store._collection.count()
-                            print(f"\n📊 Database Statistics:")
-                            print(f"   📁 Path: {os.path.abspath(args.db_path)}")
-                            print(f"   📄 Documents: {count}")
-                            print(f"   🧠 Embedder: {'BERT + Ollama' if not args.no_bert else 'Ollama only'}")
-                        except Exception as e:
-                            print(f"   Could not get count: {e}")
-                    else:
-                        print("\n📊 Database exists but unable to get statistics")
-                except Exception as e:
-                    print(f"\n❌ Error getting stats: {e}")
+                show_database_stats(processor, args.db_path)
+                continue
             
             # Check for clear command
             elif user_input.lower() == 'clear':
@@ -569,8 +707,7 @@ def main():
         except Exception as e:
             print(f"\n❌ Error: {e}")
             print("   Please try again or use 'q' to quit.")
-
-
+        
+        
 if __name__ == "__main__":
     main()
-    

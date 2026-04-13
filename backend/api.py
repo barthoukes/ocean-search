@@ -25,7 +25,7 @@ def search():
     """Angular will call this endpoint"""
     data = request.json
     query = data.get('query', '')
-    k = data.get('k', 10)
+    k = data.get('k', 100)
     
     # YOUR EXISTING SEARCH LOGIC - unchanged!
     results = processor.search(query, k=k)

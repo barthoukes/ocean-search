@@ -33,34 +33,66 @@
   </div>
 
   <!-- Error Message -->
-  <div *ngIf="errorMessage" class="alert alert-danger">
-    {{ errorMessage }}
-  </div>
+  @if (errorMessage) 
+  {
+    <div class="alert alert-danger">
+      {{ errorMessage }}
+    </div>
+  }
 
   <!-- Search Results -->
-<!-- Search Results -->
-<div *ngIf="searchResults.length > 0">
-  <h3>Results ({{ totalResults }})</h3>
-  
-  <div *ngFor="let result of searchResults" class="card mb-3">
-    <div class="card-header">
-      <strong>{{ result.filename }}</strong>
-      <span class="badge bg-secondary ms-2">{{ result.match_type }}</span>
-      <span class="badge bg-info ms-2">{{ result.embedding_type }}</span>
-    </div>
-    <div class="card-body">
-      <p class="card-text">{{ result.content_preview }}...</p>
-      <small class="text-muted">📍 {{ result.filepath }}</small>
-      
-      <!-- Snippets -->
-      <div *ngIf="result.snippets.length > 0" class="mt-2">
-        <strong>Excerpts:</strong>
-        <ul>
-          <li *ngFor="let snippet of result.snippets">{{ snippet }}</li>
-        </ul>
+  @if (searchResults.length > 0)
+  {
+    <h3>Results ({{ totalResults }})</h3>
+    
+    @for (result of searchResults; track result.filename)
+    {
+      <div class="card-mb-3">
+        <div class="card-header">
+          <strong>{{ result.filename }}</strong>
+          <span class="badge bg-secondary ms-2">{{ result.match_type }}</span>
+          <span class="badge bg-info ms-2">{{ result.embedding_type }}</span>
+        </div>
+        <div class="card-body">
+          <p class="card-text">{{ result.content_preview }}...</p>
+          <small class="text-muted">📍 {{ result.filepath }}</small>
+
+        @if (result.snippets.length > 0)
+        {
+          <div class="mt-2">
+            <strong>Excerpts:</strong>
+            <ul>
+              @for (snippet of result.snippets; track snippet)
+              {
+                {{ snippet }}
+              }
+            </ul>
+          </div>
+        }
+        </div>
+      </div>
+  }
+
+    <div *ngFor="let result of searchResults" class="card mb-3">
+      <div class="card-header">
+        <strong>{{ result.filename }}</strong>
+        <span class="badge bg-secondary ms-2">{{ result.match_type }}</span>
+        <span class="badge bg-info ms-2">{{ result.embedding_type }}</span>
+      </div>
+      <div class="card-body">
+        <p class="card-text">{{ result.content_preview }}...</p>
+        <small class="text-muted">📍 {{ result.filepath }}</small>
+        
+        <!-- Snippets -->
+        <div *ngIf="result.snippets.length > 0" class="mt-2">
+          <strong>Excerpts:</strong>
+          <ul>
+            <li *ngFor="let snippet of result.snippets">{{ snippet }}</li>
+          </ul>
+        </div>
       </div>
     </div>
-  </div>
+  }
 
   <!-- Google-style Pagination -->
   <div class="pagination-container mt-4">
@@ -74,17 +106,18 @@
             &laquo; Previous
           </button>
         </li>
-        
+      
         <!-- Page Numbers (dynamic) -->
-        <li *ngFor="let page of pageNumbers" 
-            class="page-item" 
-            [class.active]="page === currentPage">
-          <button class="page-link" 
+        @for (page of pageNumbers; track page)
+        {
+          <li class="page-item" [class.active]="page === currentPage">
+            <button class="page-link" 
                   (click)="goToPage(page)">
-            {{ page }}
-          </button>
-        </li>
-        
+              {{ page }}
+            </button>
+          </li>
+        }
+      
         <!-- Next Button -->
         <li class="page-item" [class.disabled]="currentPage === totalPages">
           <button class="page-link" 
@@ -103,7 +136,6 @@
       of {{ totalResults }} results
     </div>
   </div>
-</div>
 
   <!-- Admin Section: Add Documents -->
   <div class="card mt-4">
@@ -125,4 +157,9 @@
       </div>
     </div>
   </div>
+
+  <button (click)="onShow($event)" [disabled]="isLoading">
+    {{ isLoading ? 'Searching...' : 'Show' }}
+  </button>
+
 </div>

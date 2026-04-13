@@ -13,7 +13,7 @@ import { SearchResult } from '../../models/search-result.model';
 })
 export class SearchComponent implements OnInit {
   // Component properties
-  searchQuery: string = '';
+  searchQuery: string = ''; // What the user wants to find, e.g. Bart
   searchResults: SearchResult[] = [];
   isLoading: boolean = false;
   errorMessage: string = '';
@@ -23,7 +23,7 @@ export class SearchComponent implements OnInit {
 
    // Pagination properties
   allResults: any[] = [];  // Store all results from API
-  currentPage: number = 1;
+  currentPage: number = 1; // Which page of items to see on a single page.
   pageSize: number = 10;  // Results per page (like Google)
   totalResults: number = 0;
   totalPages: number = 0;
@@ -51,12 +51,36 @@ export class SearchComponent implements OnInit {
     });
   }
 
-  onSearch(): void {
-    if (!this.searchQuery.trim()) {
-      return;
+  onShow(event?: Event) 
+  {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
     }
+  
+    // Add some visible feedback
+    console.log('Show button clicked!');
+    
+    // Option 1: Show a temporary message
+    this.addStatus = 'Show button clicked!';
+    setTimeout(() => {
+      if (this.addStatus === 'Show button clicked!') {
+        this.addStatus = '';
+      }
+    }, 2000);
+    
+    // Option 2: Display an alert (for testing)
+    // alert('Show button clicked!');
+    
+    // Option 3: Log current search results count
+    console.log(`Current results: ${this.searchResults.length} documents`);
+  }
 
-    this.isLoading = true;
+  onSearch() 
+  {
+    if (this.isLoading) return; // Prevent multiple searches
+
+    this.isLoading = true; // Circle starts to spin on screen
     this.errorMessage = '';
     this.currentPage = 1;  // Reset to first page on new search
     
@@ -67,8 +91,16 @@ export class SearchComponent implements OnInit {
         this.totalPages = Math.ceil(this.totalResults / this.pageSize);
         this.updatePageNumbers();
         this.updateDisplayedResults();
-        this.isLoading = false;
-      },
+        this.isLoading = false; // FInished loading, circle stops spinning.
+      
+        // Optional: Scroll to results (doesn't affect refresh, just UX)
+        const resultsElement = document.querySelector('.results-container');
+        if (resultsElement) 
+        {
+          resultsElement.scrollIntoView({ behavior: 'smooth' });
+        }
+      }
+      ,
       error: (error) => {
         console.error('Search error:', error);
         this.errorMessage = 'Search failed. Check console for details.';
@@ -94,24 +126,32 @@ goToPage(page: number): void {
 }
 
 updatePageNumbers(): void {
-  // Show up to 10 page numbers, with current page in middle when possible
-  const maxPagesToShow = 10;
+  // Show up to 100 page numbers, with current page in middle when possible
+  const maxPagesToShow = 100;
   let startPage: number, endPage: number;
   
-  if (this.totalPages <= maxPagesToShow) {
+  if (this.totalPages <= maxPagesToShow)  
+  {
     startPage = 1;
     endPage = this.totalPages;
-  } else {
+  } 
+  else 
+  {
     const maxPagesBeforeCurrent = Math.floor(maxPagesToShow / 2);
     const maxPagesAfterCurrent = Math.ceil(maxPagesToShow / 2) - 1;
     
-    if (this.currentPage <= maxPagesBeforeCurrent) {
+    if (this.currentPage <= maxPagesBeforeCurrent) 
+    {
       startPage = 1;
       endPage = maxPagesToShow;
-    } else if (this.currentPage + maxPagesAfterCurrent >= this.totalPages) {
+    } 
+    else if (this.currentPage + maxPagesAfterCurrent >= this.totalPages) 
+    {
       startPage = this.totalPages - maxPagesToShow + 1;
       endPage = this.totalPages;
-    } else {
+    }
+    else
+    {
       startPage = this.currentPage - maxPagesBeforeCurrent;
       endPage = this.currentPage + maxPagesAfterCurrent;
     }

@@ -1,6 +1,7 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy, NgZone, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';  // ✅ Add this for ngIf/ngFor
 import { FormsModule } from '@angular/forms';    // ✅ Add this for ngModel
+import { Subscription } from 'rxjs'; 
 import { SearchService } from '../../services/search.service';
 import { SearchResult } from '../../models/search-result.model';
 
@@ -9,9 +10,10 @@ import { SearchResult } from '../../models/search-result.model';
   templateUrl: './search.component.html',
   styleUrls: ['./search.component.css'],
   standalone: true,
-  imports: [CommonModule, FormsModule]
+  imports: [CommonModule, FormsModule],
+  // changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class SearchComponent implements OnInit {
+export class SearchComponent implements OnInit, OnDestroy {
   // Component properties
   searchQuery: string = ''; // What the user wants to find, e.g. Bart
   searchResults: SearchResult[] = [];
@@ -31,24 +33,36 @@ export class SearchComponent implements OnInit {
   displayedResults: SearchResult[] = []; 
 
   Math = Math;
+  // ✅ Store all subscriptions to unsubscribe later
+  private subscriptions: Subscription = new Subscription();
 
-  constructor(private searchService: SearchService) { }
+  constructor(
+    private searchService: SearchService, private cdr: ChangeDetectorRef, private ngZone: NgZone) { }
 
   ngOnInit(): void {
     // Called when component loads
+    console.log('Component initialized - calling loadStats once');
     this.loadStats();
   }
 
+  ngOnDestroy(): void {
+    console.log('Component destroyed - cleaning up subscriptions');
+    this.subscriptions.unsubscribe();
+  }
+
   loadStats(): void {
-    this.searchService.getStats().subscribe({
+    const sub = this.searchService.getStats().subscribe({
       next: (data) => {
         this.documentCount = data.document_count;
+        this.cdr.detectChanges();
       },
       error: (error) => {
         console.error('Error loading stats:', error);
         this.errorMessage = 'Cannot connect to API. Is Flask running?';
+        this.cdr.detectChanges();
       }
     });
+    this.subscriptions.add(sub);
   }
 
   onShow(event?: Event) 
@@ -83,8 +97,7 @@ export class SearchComponent implements OnInit {
     this.isLoading = true; // Circle starts to spin on screen
     this.errorMessage = '';
     this.currentPage = 1;  // Reset to first page on new search
-    
-    this.searchService.search(this.searchQuery, 100).subscribe({  // Changed from 10 to 100 to get more results
+    const sub = this.searchService.search(this.searchQuery, 100).subscribe({
       next: (results) => {
         this.allResults = results;
         this.totalResults = results.length;
@@ -92,7 +105,8 @@ export class SearchComponent implements OnInit {
         this.updatePageNumbers();
         this.updateDisplayedResults();
         this.isLoading = false; // FInished loading, circle stops spinning.
-      
+        this.cdr.detectChanges();
+
         // Optional: Scroll to results (doesn't affect refresh, just UX)
         const resultsElement = document.querySelector('.results-container');
         if (resultsElement) 
@@ -105,8 +119,10 @@ export class SearchComponent implements OnInit {
         console.error('Search error:', error);
         this.errorMessage = 'Search failed. Check console for details.';
         this.isLoading = false;
+        this.cdr.detectChanges();
       }
     });
+    this.subscriptions.add(sub); 
   }
 
 updateDisplayedResults(): void {
@@ -170,11 +186,12 @@ updatePageNumbers(): void {
     }
 
     this.addStatus = 'Adding documents...';
-    this.searchService.addDocuments(this.directoryPath).subscribe({
+    const sub = this.searchService.addDocuments(this.directoryPath).subscribe({
       next: (response) => {
         this.addStatus = response.message;
         this.loadStats(); // Refresh document count
         this.directoryPath = '';
+        this.cdr.detectChanges();
         setTimeout(() => {
           this.addStatus = '';
         }, 3000);
@@ -182,8 +199,10 @@ updatePageNumbers(): void {
       error: (error) => {
         this.addStatus = 'Error: ' + (error.error?.message || 'Failed to add documents');
         console.error('Add documents error:', error);
+        this.cdr.detectChanges();
       }
     });
+    this.subscriptions.add(sub);
   }
 }
 

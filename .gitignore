@@ -4,7 +4,6 @@ __pycache__/
 venv/
 env/
 .venv/
-backend/chroma_db/
 backend/*.db
 
 # Angular

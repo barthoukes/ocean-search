@@ -14,7 +14,7 @@ CORS(app)  # Allow Angular to call this API
 
 # Initialize your existing processor
 processor = DocumentProcessor(
-    db_path="./chroma_db",
+    db_path = os.path.expanduser("~/.ocean-search/chroma_db"),
     # embed_model="nomic-embed-text-v2-moe",
     embed_model="embeddinggemma:300m",
     use_bert=True

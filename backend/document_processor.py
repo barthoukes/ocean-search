@@ -4,6 +4,7 @@ Document processor that manages loaders and vector database operations.
 
 import os
 import time
+import hashlib
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Tuple, Dict, Any
@@ -23,7 +24,7 @@ class DocumentProcessor:
     """Main processor that manages document loaders and vector database operations."""
     
     def __init__(self, db_path: str, embed_model: str, extensions: Optional[List[str]] = None, 
-                 use_bert: bool = True, filter_empty: bool = True):
+                 use_bert: bool = True, filter_empty: bool = True, verbose: bool = False):
         """
         Initialize the document processor.
         
@@ -60,6 +61,7 @@ class DocumentProcessor:
         
         # Test embedding functionality
         self._test_embeddings(embed_model)
+        self.verbose = verbose
     
     
     def _test_embeddings(self, embed_model: str) -> None:
@@ -511,21 +513,20 @@ class DocumentProcessor:
                 stats['complexity_score'] = self._calculate_complexity(content, stats['is_code_file'])
                 
                 # Language detection (basic)
-                stats['likely_language'] = self._detect_language(content)
+                # stats['likely_language'] = self._detect_language(content)
                 
                 # Special metrics for code files
-                if stats['is_code_file']:
-                    stats.update(self._analyze_code_file(content))
+                #if stats['is_code_file']:
+                #    stats.update(self._analyze_code_file(content))
                 
                 # Special metrics for documents
-                if stats['is_document']:
-                    stats.update(self._analyze_document(content))
+                #if stats['is_document']:
+                #    stats.update(self._analyze_document(content))
             
             # Performance metrics
             stats['processing_time_ms'] = (time.time() - start_time) * 1000
             
             # Add checksums for file integrity (optional)
-            stats['file_hash_md5'] = self._compute_file_hash(file_path, 'md5')
             stats['file_hash_sha256'] = self._compute_file_hash(file_path, 'sha256')
             
         except Exception as e:
@@ -533,6 +534,90 @@ class DocumentProcessor:
             stats['error'] = str(e)
         
         return stats    
+
+
+    def _is_image_file(self, file_path: str) -> bool:
+        """
+        Check if file is an image file based on extension.
+        
+        Args:
+            file_path: Path to the file
+            
+        Returns:
+            True if file has an image extension, False otherwise
+        """
+        image_extensions = {
+            '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.tif',
+            '.webp', '.svg', '.ico', '.heic', '.heif',
+            '.nef', '.arw', '.dng'
+        }
+        ext = Path(file_path).suffix.lower()
+        return ext in image_extensions
+
+
+    def _is_archive_file(self, file_path: str) -> bool:
+        """
+        Check if file is an archive by examining magic bytes.
+        
+        Args:
+            file_path: Path to the file
+            
+        Returns:
+            True if file appears to be an archive, False otherwise
+        """
+        try:
+            with open(file_path, 'rb') as f:
+                header = f.read(8)
+                
+                # Check various archive signatures
+                # ZIP: PK
+                if header[:2] == b'PK':
+                    return True
+                # GZIP: 0x1F 0x8B
+                if header[:2] == b'\x1f\x8b':
+                    return True
+                # RAR: Rar!
+                if header[:4] == b'Rar!':
+                    return True
+                # 7Z: 7z
+                if header[:2] == b'7z':
+                    return True
+                # TAR: Check for ustar at offset 257
+                f.seek(257)
+                ustar = f.read(5)
+                if ustar == b'ustar':
+                    return True
+                # BZIP2: BZ
+                if header[:2] == b'BZ':
+                    return True
+                # XZ: 0xFD 0x37 0x7A 0x58 0x5A 0x00
+                if header[:6] == b'\xfd\x37\x7a\x58\x5a\x00':
+                    return True
+        except Exception:
+            pass
+        
+        return False
+
+
+    def process_archive(self, archive_path: str) -> List[EnhancedDocument]:
+        """Extract archive and process all files inside."""
+        import zipfile  # or tarfile, patool, etc.
+        
+        documents = []
+        
+        if archive_path.endswith('.zip'):
+            with zipfile.ZipFile(archive_path, 'r') as zip_ref:
+                for file_info in zip_ref.infolist():
+                    if not file_info.is_dir():
+                        # Extract to temp location
+                        extracted_path = zip_ref.extract(file_info)
+                        # Process the extracted file
+                        doc = self.process_file(extracted_path)
+                        if doc:
+                            doc.metadata['source_archive'] = archive_path
+                            documents.append(doc)
+        
+        return documents
 
 
     def _is_text_file(self, file_path: str) -> bool:
@@ -543,6 +628,65 @@ class DocumentProcessor:
             return True
         except (UnicodeDecodeError, IOError):
             return False
+
+
+    def _compute_file_hash(self, file_path, algorithm='sha256'):
+        """Compute hash of a file using specified algorithm."""
+        
+        # Select the hash algorithm
+        if algorithm == 'sha256':
+            hash_func = hashlib.sha256()
+        elif algorithm == 'md5':
+            hash_func = hashlib.md5()
+        elif algorithm == 'sha1':
+            hash_func = hashlib.sha1()
+        else:
+            raise ValueError(f"Unsupported algorithm: {algorithm}")
+        
+        # Read file in chunks to handle large files efficiently
+        with open(file_path, 'rb') as f:
+            for chunk in iter(lambda: f.read(4096), b''):
+                hash_func.update(chunk)
+        
+        # Return hexadecimal digest
+        return hash_func.hexdigest()
+
+
+    def _parse_permissions(self, mode: int) -> str:
+        """
+        Converts raw file mode bits (st_mode) into a standard octal permission string.
+        
+        Args:
+            mode: The mode integer from os.stat().
+            
+        Returns:
+            A string representing the permissions (e.g., 'rwxr-xr--').
+        """
+        # Helper list for readability
+        permissions_map = [
+            ('r', 0o400),  # Owner read
+            ('w', 0o200),  # Owner write
+            ('x', 0o100),  # Owner execute
+            
+            ('r', 0o040),  # Group read
+            ('w', 0o020),  # Group write
+            ('x', 0o010),  # Group execute
+            
+            ('r', 0o004),  # Others read
+            ('w', 0o002),  # Others write
+            ('x', 0o001)   # Others execute
+        ]
+        
+        perms = ['-'] * 9
+        
+        # We map the 9 positions: Owner(3) | Group(3) | Others(3)
+        for i, (char, mask) in enumerate(permissions_map):
+            # Index calculation: 0=OwnerR, 1=OwnerW, 2=OwnerX, 3=GRP_R, etc.
+            index = i
+            if mode & mask:
+                perms[index] = char
+                
+        return " ".join(perms) # Return a space-separated string for clarity
 
 
     def _is_code_file(self, file_path: str) -> bool:
@@ -570,6 +714,243 @@ class DocumentProcessor:
                 return f"{size_bytes:.1f} {unit}"
             size_bytes /= 1024.0
         return f"{size_bytes:.1f} TB"
+
+
+    def _calculate_complexity(self, content: str, is_code: bool = False) -> float:
+        """
+        Calculate a complexity score for content (0-100 scale).
+        
+        Higher scores indicate more complex content.
+        
+        Args:
+            content: Text content to analyze
+            is_code: Whether this is source code (True) or natural language (False)
+            
+        Returns:
+            Complexity score from 0.0 to 100.0
+        """
+        if not content or len(content.strip()) == 0:
+            return 0.0
+        
+        if is_code:
+            return self._calculate_code_complexity(content)
+        else:
+            return self._calculate_text_complexity(content)
+
+
+    def _calculate_code_complexity(self, content: str) -> float:
+        """
+        Calculate complexity score for source code.
+        
+        Metrics considered:
+        - Nesting depth (how many levels of { } or indentation)
+        - Line length (very long lines are harder to read)
+        - Number of operators per line
+        - Function/method count
+        - Comment ratio (less comments = harder to understand)
+        """
+        lines = content.split('\n')
+        
+        if not lines:
+            return 0.0
+        
+        # Remove empty lines for analysis
+        non_empty_lines = [l for l in lines if l.strip()]
+        if not non_empty_lines:
+            return 0.0
+        
+        # 1. Nesting depth (most important for code complexity)
+        max_nesting = 0
+        current_nesting = 0
+        
+        for line in lines:
+            # Count opening and closing braces/brackets
+            opens = line.count('{') + line.count('(') + line.count('[')
+            closes = line.count('}') + line.count(')') + line.count(']')
+            
+            current_nesting += opens - closes
+            current_nesting = max(0, current_nesting)
+            max_nesting = max(max_nesting, current_nesting)
+        
+        # Also check indentation-based nesting (Python)
+        indent_levels = []
+        for line in non_empty_lines:
+            indent = len(line) - len(line.lstrip())
+            if indent > 0:
+                indent_levels.append(indent // 4)  # Assume 4 spaces per level
+        
+        if indent_levels:
+            max_indent_nesting = max(indent_levels)
+            max_nesting = max(max_nesting, max_indent_nesting)
+        
+        nesting_score = min(100, (max_nesting / 10) * 100)
+        
+        # 2. Line length complexity
+        avg_line_length = sum(len(l) for l in non_empty_lines) / len(non_empty_lines)
+        # Lines > 80 chars are hard to read, >120 is very complex
+        if avg_line_length > 120:
+            line_length_score = 100
+        elif avg_line_length > 80:
+            line_length_score = 60 + (avg_line_length - 80) / 40 * 40
+        else:
+            line_length_score = (avg_line_length / 80) * 60
+        
+        # 3. Operator density (more operators = more complex logic)
+        operators = {'+', '-', '*', '/', '%', '=', '==', '!=', '<', '>', '<=', '>=',
+                    '&&', '||', '&', '|', '^', '<<', '>>', '++', '--', '+=', '-=',
+                    '*=', '/=', '?', ':'}
+        
+        total_operators = 0
+        for line in non_empty_lines:
+            for op in operators:
+                total_operators += line.count(op)
+        
+        operator_density = total_operators / len(non_empty_lines)
+        operator_score = min(100, (operator_density / 5) * 100)  # 5 ops/line = 100%
+        
+        # 4. Function/method complexity
+        function_indicators = ['def ', 'function ', '=>', 'lambda', 'class ']
+        function_count = 0
+        for indicator in function_indicators:
+            function_count += content.count(indicator)
+        
+        # More functions per line indicates modularity (lower complexity)
+        functions_per_line = function_count / len(non_empty_lines)
+        function_score = min(100, functions_per_line * 200)  # Many small functions can be complex
+        
+        # 5. Comment ratio (comments reduce perceived complexity)
+        comment_lines = 0
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith('#') or stripped.startswith('//') or stripped.startswith('/*'):
+                comment_lines += 1
+        
+        comment_ratio = comment_lines / max(1, len(lines))
+        comment_bonus = comment_ratio * 30  # Good comments reduce complexity score
+        
+        # 6. Cyclomatic complexity approximation (branching)
+        branches = content.count('if ') + content.count('else') + content.count('elif ') + \
+                content.count('switch') + content.count('case') + content.count('for ') + \
+                content.count('while ') + content.count('catch') + content.count('?')
+        
+        branch_density = branches / max(1, len(non_empty_lines))
+        branch_score = min(100, branch_density * 50)
+        
+        # Combine scores
+        raw_complexity = (
+            nesting_score * 0.35 +      # Nesting is very important
+            line_length_score * 0.15 +
+            operator_score * 0.15 +
+            function_score * 0.10 +
+            branch_score * 0.25
+        )
+        
+        # Apply comment bonus (reduce complexity for well-commented code)
+        final_complexity = max(0, raw_complexity - comment_bonus)
+        
+        return min(100, final_complexity)
+
+
+    def _calculate_text_complexity(self, content: str) -> float:
+        """
+        Calculate complexity score for natural language text.
+        
+        Metrics considered:
+        - Average sentence length
+        - Word length (sophisticated vocabulary)
+        - Lexical diversity (unique words ratio)
+        - Use of complex punctuation
+        - Paragraph structure
+        """
+        if not content:
+            return 0.0
+        
+        # Split into sentences
+        sentences = []
+        for sep in ['. ', '! ', '? ', '.\n', '!\n', '?\n']:
+            if sep in content:
+                sentences.extend([s + sep for s in content.split(sep) if s])
+        
+        if not sentences:
+            sentences = [content]
+        
+        # Split into words
+        words = content.split()
+        if not words:
+            return 0.0
+        
+        # 1. Average sentence length (longer sentences = more complex)
+        avg_sentence_length = len(words) / len(sentences)
+        if avg_sentence_length > 30:
+            sentence_score = 100
+        elif avg_sentence_length > 20:
+            sentence_score = 70 + (avg_sentence_length - 20) / 10 * 30
+        elif avg_sentence_length > 12:
+            sentence_score = 40 + (avg_sentence_length - 12) / 8 * 30
+        else:
+            sentence_score = (avg_sentence_length / 12) * 40
+        
+        # 2. Average word length (longer words = more sophisticated vocabulary)
+        avg_word_length = sum(len(w) for w in words) / len(words)
+        if avg_word_length > 8:
+            word_score = 100
+        elif avg_word_length > 6:
+            word_score = 50 + (avg_word_length - 6) / 2 * 50
+        else:
+            word_score = (avg_word_length / 6) * 50
+        
+        # 3. Lexical diversity (unique words ratio)
+        unique_words = set(w.lower().strip('.,!?;:()[]{}"\'') for w in words)
+        diversity = len(unique_words) / len(words)
+        diversity_score = diversity * 100  # Higher diversity = more complex
+        
+        # 4. Complex punctuation (semicolons, colons, parentheses, quotes)
+        complex_punct_count = content.count(';') + content.count(':') + \
+                            content.count('(') + content.count(')') + \
+                            content.count('"') + content.count("'") + \
+                            content.count('—') + content.count('–')
+        
+        punct_density = complex_punct_count / max(1, len(words))
+        punct_score = min(100, punct_density * 200)
+        
+        # 5. Paragraph complexity (shorter paragraphs often indicate simpler text)
+        paragraphs = content.split('\n\n')
+        avg_paragraph_length = len(words) / max(1, len(paragraphs))
+        
+        if avg_paragraph_length > 150:
+            paragraph_score = 100
+        elif avg_paragraph_length > 75:
+            paragraph_score = 50 + (avg_paragraph_length - 75) / 75 * 50
+        else:
+            paragraph_score = (avg_paragraph_length / 75) * 50
+        
+        # 6. Reading level approximation (Flesch-Kincaid style)
+        syllables = 0
+        for word in words:
+            # Rough syllable count
+            word_lower = word.lower()
+            syl_count = 1
+            vowels = 'aeiou'
+            for i, char in enumerate(word_lower):
+                if char in vowels and (i == 0 or word_lower[i-1] not in vowels):
+                    syl_count += 1
+            syllables += max(1, syl_count)
+        
+        flesch_score = 206.835 - 1.015 * avg_sentence_length - 84.6 * (syllables / len(words))
+        # Convert to 0-100 scale (lower Flesch score = more complex)
+        reading_level = max(0, min(100, (100 - flesch_score) / 2))
+        
+        # Combine all metrics
+        complexity = (
+            sentence_score * 0.25 +
+            word_score * 0.20 +
+            diversity_score * 0.20 +
+            punct_score * 0.10 +
+            paragraph_score * 0.10 +
+            reading_level * 0.15
+        )
+        
+        return min(100, complexity)
 
 
     def add_file(self, file_path: str) -> bool:

@@ -526,8 +526,9 @@ def format_size(size_bytes):
 
 
 def main():
+    defaultPath =  os.path.expanduser("~/.ocean-search/chroma_db")
     parser = argparse.ArgumentParser(description="Interactive document search with Ollama embeddings and optional BERT for text.")
-    parser.add_argument("--db_path", default="./chroma_db", help="Path to Chroma DB")
+    parser.add_argument("--db_path", default=defaultPath, help="Path to Chroma DB")
     #parser.add_argument("--embed_model", default="nomic-embed-text-v2-moe", help="Ollama embedding model (fallback)")
     parser.add_argument("--embed_model", default="embeddinggemma:300m", help="Ollama embedding model (fallback)")
     parser.add_argument("--extensions", nargs="+", default=None,

@@ -32,7 +32,7 @@ Supported extensions: .bash, .bmp, .c, .cc, .cpp, .css, .gif, .go, .h, .hpp, .ht
 
 🔧 Using Ollama for all file types
 
-📁 Database exists at: /home/mensfort/workspace/ocean-search/chroma_db
+📁 Database exists at: ~/.ocean-search/chroma_db
    Use 'clear' to delete all documents and start fresh
    Use 'stats' to see document count
 

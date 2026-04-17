@@ -21,7 +21,7 @@ embedding_models = [
 # Test sentences with different semantic meanings
 test_sentences = [
     "The ocean is vast and full of mysterious creatures",
-    "Bart works for ENTER, a company in Eindhoven",
+    "Bart  works    for    ENTER, a company in Eindhoven",
     "The sea contains many undiscovered species",
     "Machine learning models can generate text embeddings",
     "Vector similarity measures how close two sentences are in meaning",

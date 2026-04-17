@@ -40,6 +40,111 @@ class SearchState:
         self.pagination_info: Dict[str, Any] = {}
         
 
+def check_and_load_embedding_model(embed_model: str, processor) -> bool:
+    """
+    Check if the specified embedding model is available in Ollama.
+    If not, try to load an existing model and show a message.
+    
+    Args:
+        embed_model: Name of the embedding model to check
+        processor: DocumentProcessor instance
+    
+    Returns:
+        True if a model is available, False otherwise
+    """
+    try:
+        import requests
+        import subprocess
+        
+        # First, check if Ollama is running
+        try:
+            response = requests.get("http://localhost:11434/api/tags", timeout=5)
+            if response.status_code != 200:
+                print("\n⚠️  Ollama is not responding properly.")
+                return False
+        except requests.exceptions.ConnectionError:
+            print("\n❌ Ollama is not running. Please start Ollama first:")
+            print("   sudo systemctl start ollama  # or 'ollama serve'")
+            return False
+        
+        # Get list of installed models
+        installed_models = response.json().get('models', [])
+        installed_model_names = [model['name'].split(':')[0] for model in installed_models]
+        
+        # Check if the requested model is installed
+        requested_model_base = embed_model.split(':')[0]
+        
+        if requested_model_base in installed_model_names:
+            print(f"✅ Using embedding model: {embed_model}")
+            return True
+        
+        # Model not found - show message and try to find an alternative
+        print(f"\n⚠️  Embedding model '{embed_model}' not found in Ollama.")
+        print(f"   Available models: {', '.join(installed_model_names) if installed_model_names else 'None'}")
+        
+        # Look for common embedding models
+        alternative_models = [
+            'nomic-embed-text',
+            'all-minilm',
+            'bge-small',
+            'bge-m3',
+            'mxbai-embed-large',
+            'snowflake-arctic-embed'
+        ]
+        
+        available_alternatives = [m for m in alternative_models if m in installed_model_names]
+        
+        if available_alternatives:
+            # Use the first available alternative
+            chosen_model = available_alternatives[0]
+            print(f"\n🔄 Loading alternative model: {chosen_model}")
+            print(f"   (Original request was for: {embed_model})")
+            
+            # Update the processor to use the available model
+            processor.embedding_model = chosen_model
+            processor.smart_embedder = processor.get_embedding_function(chosen_model)
+            
+            # Recreate the vector store with the new embedding function
+            processor.vector_store = Chroma(
+                collection_name="document_collection",
+                embedding_function=processor.smart_embedder,
+                persist_directory=processor.persist_directory
+            )
+            
+            print(f"✅ Successfully switched to: {chosen_model}")
+            return True
+        elif installed_model_names:
+            # No embedding-specific models found, offer to use any available model
+            print(f"\n📋 No standard embedding models found. Available models:")
+            for i, model in enumerate(installed_model_names[:5], 1):
+                print(f"   {i}. {model}")
+            
+            # Auto-select the first available model (or could prompt user)
+            chosen_model = installed_model_names[0]
+            print(f"\n🔄 Using fallback model: {chosen_model}")
+            print(f"   ⚠️  Note: This may not be optimized for embeddings.")
+            
+            processor.embedding_model = chosen_model
+            processor.smart_embedder = processor.get_embedding_function(chosen_model)
+            processor.vector_store = Chroma(
+                collection_name="document_collection",
+                embedding_function=processor.smart_embedder,
+                persist_directory=processor.persist_directory
+            )
+            
+            return True
+        else:
+            print("\n❌ No models installed in Ollama. Please install an embedding model:")
+            print("   ollama pull nomic-embed-text")
+            print("   or")
+            print("   ollama pull all-minilm")
+            return False
+            
+    except Exception as e:
+        print(f"\n❌ Error checking embedding models: {e}")
+        return False
+
+        
 def clear_database(db_path: str, processor: DocumentProcessor) -> bool:
     """
     Clear the database by deleting all documents and resetting the collection.
@@ -384,7 +489,6 @@ def perform_search(processor, query, page, page_size, args):
 def main():
     parser = argparse.ArgumentParser(description="Interactive document search with Ollama embeddings and optional BERT for text.")
     parser.add_argument("--db_path", default="./chroma_db", help="Path to Chroma DB")
-    #parser.add_argument("--embed_model", default="nomic-embed-text-v2-moe", help="Ollama embedding model (fallback)")
     parser.add_argument("--embed_model", default="embeddinggemma:300m", help="Ollama embedding model (fallback)")
     parser.add_argument("--extensions", nargs="+", default=None,
                         help="File extensions to include when filling (e.g., .txt .pdf .py)")
@@ -406,6 +510,14 @@ def main():
         args.extensions,
         use_bert=not args.no_bert
     )
+    
+    # Check if the embedding model is available in Ollama
+    print("\n🔍 Checking embedding model availability...")
+    if not check_and_load_embedding_model(args.embed_model, processor):
+        print("\n❌ Failed to find a suitable embedding model. Exiting.")
+        print("   Please install at least one embedding model:")
+        print("   ollama pull nomic-embed-text")
+        sys.exit(1)
     
     # Get all supported extensions
     all_extensions: Set[str] = set()
@@ -429,6 +541,9 @@ def main():
         print("   Code files, PDFs, images, markup files use Ollama embeddings")
     else:
         print("\n🔧 Using Ollama for all file types")
+    
+    # Show current embedding model
+    print(f"\n📌 Current Ollama embedding model: {processor.embedding_model}")
     
     # Show database stats if it exists
     if os.path.exists(args.db_path):
@@ -503,6 +618,7 @@ def main():
                             print(f"   📁 Path: {os.path.abspath(args.db_path)}")
                             print(f"   📄 Documents: {count}")
                             print(f"   🧠 Embedder: {'BERT + Ollama' if not args.no_bert else 'Ollama only'}")
+                            print(f"   🔧 Ollama Model: {processor.embedding_model}")
                         except Exception as e:
                             print(f"   Could not get count: {e}")
                     else:
@@ -573,4 +689,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    

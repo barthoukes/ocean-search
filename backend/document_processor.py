@@ -36,6 +36,7 @@ class DocumentProcessor:
         """
         from langchain_ollama import OllamaEmbeddings
         
+        self.embedding_model = embed_model
         # Create Ollama embeddings
         self.ollama_embeddings = OllamaEmbeddings(model=embed_model)
    

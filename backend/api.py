@@ -16,7 +16,8 @@ CORS(app)  # Allow Angular to call this API
 processor = DocumentProcessor(
     db_path="./chroma_db",
     # embed_model="nomic-embed-text-v2-moe",
-    embed_model="embeddinggemma:300m",
+    # embeddinggemma:300m has issues with multiple spaces.
+    embed_model='bge-m3',
     use_bert=True
 )
 

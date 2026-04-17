@@ -331,7 +331,6 @@ def display_search_results(results, query, args, pagination_info=None):
                 print(f"   📄 Contains {doc.metadata.get('pages', 0)} pages with extractable text")
             else:
                 print(f"   ⚠️  PDF has {doc.metadata.get('pages', 0)} pages but no extractable text")
-        
         elif doc.metadata.get('type') == 'image':
             print(f"   📐 Dimensions: {doc.metadata.get('width', '?')}x{doc.metadata.get('height', '?')}")
         
@@ -552,6 +551,13 @@ def main():
         args.extensions,
         use_bert=not args.no_bert
     )
+    # Check if the embedding model is available in Ollama
+    print("\n🔍 Checking embedding model availability...")
+    if not check_and_load_embedding_model(args.embed_model, processor):
+        print("\n❌ Failed to find a suitable embedding model. Exiting.")
+        print("   Please install at least one embedding model:")
+        print("   ollama pull nomic-embed-text")
+        sys.exit(1)
     
     # Check if stats flag is set (do this before showing interactive UI)
     if args.stats:
@@ -580,6 +586,9 @@ def main():
         print("   Code files, PDFs, images, markup files use Ollama embeddings")
     else:
         print("\n🔧 Using Ollama for all file types")
+    
+    # Show current embedding model
+    print(f"\n📌 Current Ollama embedding model: {processor.embedding_model}")
     
     # Show database stats if it exists
     if os.path.exists(args.db_path):
@@ -707,7 +716,8 @@ def main():
         except Exception as e:
             print(f"\n❌ Error: {e}")
             print("   Please try again or use 'q' to quit.")
-        
-        
+
+
 if __name__ == "__main__":
     main()
+    

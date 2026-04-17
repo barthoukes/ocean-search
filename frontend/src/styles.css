@@ -3,3 +3,28 @@
     font-weight: 700; /* 'Bold' weight */
 }
 
+body {
+  font-family: 'Google Sans', 'Roboto', Arial, sans-serif;
+  margin: 0;
+  padding: 20px;
+  background: #f8f9fa;
+}
+
+h1 {
+  color: #202124;
+  font-size: 2rem;
+}
+
+button {
+  background: #1a73e8;
+  color: white;
+  border: none;
+  padding: 10px 24px;
+  border-radius: 4px;
+  font-family: 'Google Sans', sans-serif;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #1557b0;
+}

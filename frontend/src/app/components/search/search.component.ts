@@ -65,6 +65,13 @@ export class SearchComponent implements OnInit, OnDestroy {
     this.subscriptions.add(sub);
   }
 
+  onRandomSearch() {
+    const randomQueries = ['document', 'vector', 'search', 'database', 'embedding', 'AI'];
+    const randomQuery = randomQueries[Math.floor(Math.random() * randomQueries.length)];
+    this.searchQuery = randomQuery;
+    this.onSearch();
+  }
+
   onShow(event?: Event) 
   {
     if (event) {

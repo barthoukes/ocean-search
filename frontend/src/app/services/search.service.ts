@@ -27,6 +27,7 @@ export class SearchService {
   // POST /api/fill
   addDocuments(path: string): Observable<any> {
     return this.http.post(`${this.apiUrl}/fill`, { path });
+
   }
 }
 

@@ -6,21 +6,36 @@
     📊 Database contains <strong>{{ documentCount }}</strong> documents
   </div>
 
-  <!-- Search Box -->
-  <div class="card mb-4">
-    <div class="card-body">
-      <div class="input-group">
-        <input type="text" 
-               class="form-control" 
-               [(ngModel)]="searchQuery"
-               (keyup.enter)="onSearch()"
-               placeholder="Enter your search query...">
-        <button class="btn btn-primary" 
-                (click)="onSearch()"
-                [disabled]="isLoading">
-          {{ isLoading ? 'Searching...' : 'Search' }}
-        </button>
+  <!-- Search box -->
+  <div class="search-container">
+    <div class="search-box">
+      <svg class="search-icon" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+        <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+      </svg>
+      <input 
+        type="text" 
+        [(ngModel)]="searchQuery"
+        (keyup.enter)="onSearch()"
+        placeholder="Search your documents..."
+        class="search-input"
+      />
+      @if (!isLoading)
+      {
+        <div class="voice-icon">
+          <svg focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M12 15c1.66 0 2.99-1.34 2.99-3L15 6c0-1.66-1.34-3-3-3S9 4.34 9 6v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 15 6.7 12H5c0 3.41 2.72 6.23 6 6.72V21h2v-2.28c3.28-.49 6-3.31 6-6.72h-1.7z"/>
+          </svg>
+        </div>
+      }
+      <div class="loading-spinner" *ngIf="isLoading">
+        <div class="spinner"></div>
       </div>
+    </div>
+
+    <!-- Buttons -->
+    <div class="buttons">
+      <button (click)="onSearch()" [disabled]="isLoading">Ocean Search</button>
+      <button (click)="onRandomSearch()">I'm Feeling Lucky</button>
     </div>
   </div>
 
@@ -79,7 +94,10 @@
         <div *ngIf="result.snippets.length > 0" class="mt-2">
           <strong>Excerpts:</strong>
           <ul>
-            <li *ngFor="let snippet of result.snippets">{{ snippet }}</li>
+            @for (snippet of result.snippets; track snippet)
+            {
+              <li> {{ snippet }} </li>
+            }
           </ul>
         </div>
       </div>

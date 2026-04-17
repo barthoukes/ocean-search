@@ -9,6 +9,171 @@
   font-size: 0.8em;
 }
 
+/* Google-style buttons container */
+.google-buttons {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+/* I'm Feeling Lucky button */
+.google-lucky-button {
+  background-color: #f8f9fa;
+  border: 1px solid #f8f9fa;
+  border-radius: 4px;
+  color: #3c4043;
+  font-size: 14px;
+  padding: 9px 23px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.google-lucky-button:hover {
+  border-color: #dadce0;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.1);
+  background-color: #f8f9fa;
+}
+
+/* Mic button positioned inside input */
+.google-mic-button {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  transition: background-color 0.2s ease;
+}
+
+.google-mic-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.google-mic-button:hover {
+  background-color: rgba(66, 133, 244, 0.1);
+}
+
+.google-search-box {
+  width: 100%;
+  max-width: 584px;
+  margin: 0 auto;
+}
+
+/* Google Search button */
+.google-search-button {
+  background-color: #f8f9fa;
+  border: 1px solid #f8f9fa;
+  border-radius: 4px;
+  color: #3c4043;
+  font-size: 14px;
+  padding: 9px 23px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: Arial, sans-serif;
+}
+
+/* Google-style Search Container */
+.google-search-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin: 2rem auto;
+  width: 100%;
+}
+
+.google-search-button,
+  .google-lucky-button {
+    padding: 7px 16px;
+    font-size: 12px;
+  }
+
+.google-search-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.google-search-button:hover {
+  border-color: #dadce0;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.1);
+  background-color: #f8f9fa;
+}
+
+/* The big, rounded search input */
+.google-search-input {
+  width: 100%;
+  height: 44px;
+  padding: 0 50px 0 20px;
+  font-size: 16px;
+  border: 1px solid #dfe1e5;
+  border-radius: 24px;
+  outline: none;
+  background: white;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 6px rgba(32, 33, 36, 0.08);
+}
+
+/* Focus effect (Google blue glow) */
+.google-search-input:focus {
+  border-color: #4285f4;
+  box-shadow: 0 1px 6px rgba(66, 133, 244, 0.3);
+}
+
+/* Hover effect */
+.google-search-input:hover {
+  border-color: #d0d2d5;
+  box-shadow: 0 1px 6px rgba(32, 33, 36, 0.15);
+}
+
+/* Responsive: On mobile, make search box slightly smaller */
+
+/* Responsive */
+@media (max-width: 768px) {
+  .ocean-logo {
+    font-size: 50px;
+  }
+  
+  .logo-container {
+    margin: 40px 0 20px 0;
+  }
+  
+  .search-container {
+    padding: 10px;
+  }
+  
+  .results-container {
+    padding: 0 16px;
+  }
+  
+  .result-title {
+    font-size: 18px;
+  }
+}
+
+/* Loading spinner */
+.loading-spinner {
+  padding: 0 8px;
+}
+
+.mic-icon.listening {
+  animation: pulse 1.5s infinite;
+}
+
+/* Mic icon */
+.mic-icon {
+  width: 20px;
+  height: 20px;
+}
+
 .pagination-container {
   margin-top: 2rem;
   margin-bottom: 2rem;
@@ -32,4 +197,78 @@
 
 .pagination .page-link:focus {
   box-shadow: none;
+}
+
+/* Voice search animation (optional) */
+@keyframes pulse {
+  0% {
+    transform: translateY(-50%) scale(1);
+  }
+  50% {
+    transform: translateY(-50%) scale(1.1);
+  }
+  100% {
+    transform: translateY(-50%) scale(1);
+  }
+}
+
+.search-box {
+  display: flex;
+  align-items: center;
+  border: 1px solid #dfe1e5;
+  border-radius: 24px;
+  padding: 5px 8px 5px 14px;
+  background: white;
+  transition: box-shadow 0.2s;
+}
+
+.search-box:hover {
+  box-shadow: 0 1px 6px rgba(32,33,36,.28);
+  border-color: rgba(223,225,229,0);
+}
+
+.search-box:focus-within {
+  box-shadow: 0 1px 6px rgba(32,33,36,.28);
+  border-color: rgba(223,225,229,0);
+}
+
+/* Search container */
+.search-container {
+  width: 100%;
+  max-width: 584px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.search-icon {
+  width: 20px;
+  height: 20px;
+  fill: #9aa0a6;
+  margin-right: 12px;
+}
+
+.search-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  font-size: 16px;
+  padding: 12px 0;
+  background: transparent;
+}
+
+/* Search Input Wrapper - positions mic inside */
+.search-input-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.voice-icon {
+  cursor: pointer;
+  padding: 0 8px;
+}
+
+.voice-icon svg {
+  width: 24px;
+  height: 24px;
+  fill: #4285f4;
 }

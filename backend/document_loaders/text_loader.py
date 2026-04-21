@@ -16,7 +16,7 @@ class TextFileLoader(DocumentLoader):
     """Loader for natural language text files (uses BERT)."""
 
     def _get_supported_extensions(self) -> Set[str]:
-        return {'.txt', '.md', '.rst', '.text'}
+        return {'.txt', '.md', '.rst', '.text', '.dat', '.inp', '.neu'}
 
     def load_document(self, file_path: str) -> Optional[Document]:
         try:

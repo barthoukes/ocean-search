@@ -13,8 +13,8 @@ from langchain_core.documents import Document
 
 from embedders import SmartEmbedder
 from document_loaders import (
-    TextFileLoader, MarkupFileLoader, PDFLoader, 
-    ImageLoader, CodeLoader, DocumentLoader
+    TextFileLoader, MarkupFileLoader, PDFLoader, ExcelLoader,
+    ImageLoader, CodeLoader, DocumentLoader, JSONLoader, ModfemLoader
 )
 from query_matcher import QueryMatcher
 from enhanced_document import EnhancedDocument
@@ -108,8 +108,11 @@ class DocumentProcessor:
             TextFileLoader(ext_set),
             MarkupFileLoader(ext_set),
             PDFLoader(ext_set),
+            ExcelLoader(ext_set),
             ImageLoader(ext_set),
-            CodeLoader(ext_set)
+            CodeLoader(ext_set),
+            JSONLoader(ext_set),
+            ModfemLoader(ext_set)
         ]
         
         # Filter loaders that have support for requested extensions

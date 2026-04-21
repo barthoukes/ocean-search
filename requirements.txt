@@ -10,3 +10,11 @@ flask
 flask-cors
 sentence-transformers
 pillow
+chromadb
+numpy
+torch
+openpyxl
+python-docx
+python-pptx
+python-magic
+

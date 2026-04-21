@@ -16,4 +16,4 @@ fi
 export PYTHONPATH="${PYTHONPATH}:$(pwd)"
 
 # Run the API
-python3 api.py
+python3 api.py "$@"

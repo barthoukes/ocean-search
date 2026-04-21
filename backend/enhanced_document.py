@@ -10,7 +10,7 @@ from langchain_core.documents import Document
 from embedders import SmartEmbedder
 from document_loaders import (
     TextFileLoader, MarkupFileLoader, PDFLoader, 
-    ImageLoader, CodeLoader, DocumentLoader
+    ImageLoader, CodeLoader, DocumentLoader, ModfemLoader
 )
 from query_matcher import QueryMatcher
 

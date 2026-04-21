@@ -16,4 +16,4 @@ fi
 export PYTHONPATH="${PYTHONPATH}:$(pwd)"
 
 # Run the SEARCH for the terminal
-python3 ocean_search.py
+python3 ocean_search.py "$@"

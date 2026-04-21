@@ -194,10 +194,17 @@ def cmd_fill(path_str, processor):
     print(f"📂 Scanning: {path}")
     print(f"🚫 Excluding: {', '.join(sorted(all_excludes))}")
     
+    # Start timing the entire fill process
+    fill_start_time = time.time()
+    
     # Walk through directory
     files_processed = 0
     files_skipped = 0
     dirs_skipped = 0
+    
+    # Track encoding times per file
+    encoding_times = []
+    file_details = []
     
     for root, dirs, files in os.walk(path):
         # Filter out excluded directories (modify dirs in-place)
@@ -214,24 +221,72 @@ def cmd_fill(path_str, processor):
                 files_skipped += 1
                 continue
             
-            # Process the file
+            # Process the file with timing
             try:
-                # Call your existing method
                 print(f"  📄 {filepath}")
-                if processor.add_file(filepath):
+                
+                # Time individual file encoding
+                file_start_time = time.time()
+                success = processor.add_file(filepath)
+                file_encoding_time = time.time() - file_start_time
+                
+                if success:
                     files_processed += 1
+                    encoding_times.append(file_encoding_time)
+                    file_details.append({
+                        'filename': os.path.basename(filepath),
+                        'time': file_encoding_time
+                    })
+                    
+                    # Optional: Show timing for slow files (>1 second)
+                    if file_encoding_time > 1.0:
+                        print(f"      ⏱️  Encoding took: {file_encoding_time:.2f} seconds")
+                else:
+                    files_skipped += 1
+                    
             except Exception as e:
                 print(f"  ⚠️  Error processing {file}: {e}")
                 files_skipped += 1
     
-    # Print summary
+    # Calculate total fill time
+    total_fill_time = time.time() - fill_start_time
+    
+    # Print timing summary
     print(f"\n✅ Fill completed!")
     print(f"   📁 Files processed: {files_processed}")
     if files_skipped > 0:
         print(f"   ⏭️  Files skipped: {files_skipped}")
     if dirs_skipped > 0:
         print(f"   📁 Directories skipped: {dirs_skipped}")
-
+    
+    # Display timing statistics
+    print(f"\n⏱️  TIMING STATISTICS:")
+    print(f"   Total fill time: {total_fill_time:.2f} seconds")
+    
+    if files_processed > 0:
+        avg_encoding_time = sum(encoding_times) / len(encoding_times)
+        min_encoding_time = min(encoding_times)
+        max_encoding_time = max(encoding_times)
+        
+        print(f"   Files encoded: {files_processed}")
+        print(f"   Average encoding time: {avg_encoding_time:.3f} seconds/file")
+        print(f"   Min encoding time: {min_encoding_time:.3f} seconds")
+        print(f"   Max encoding time: {max_encoding_time:.3f} seconds")
+        print(f"   Total encoding time: {sum(encoding_times):.2f} seconds")
+        
+        # Show top 5 slowest files (if any)
+        if len(file_details) > 0:
+            slowest_files = sorted(file_details, key=lambda x: x['time'], reverse=True)[:5]
+            if slowest_files and slowest_files[0]['time'] > 0.5:
+                print(f"\n   🐌 Slowest files to encode:")
+                for fd in slowest_files:
+                    print(f"      - {fd['filename']}: {fd['time']:.2f} seconds")
+    
+    # Show encoding rate
+    if total_fill_time > 0 and files_processed > 0:
+        encoding_rate = files_processed / total_fill_time
+        print(f"\n   📊 Encoding rate: {encoding_rate:.2f} files/second")
+        
 
 def display_search_results(results, query, args, pagination_info=None):
     """
@@ -524,12 +579,208 @@ def format_size(size_bytes):
     return f"{size_bytes:.1f} TB"
 
 
+def check_and_load_embedding_model(embedding_model: str, processor: DocumentProcessor) -> bool:
+    """
+    Check if the specified embedding model is available in Ollama.
+    If not, attempt to pull it automatically.
+    
+    Args:
+        embedding_model: Name of the Ollama embedding model to check
+        processor: DocumentProcessor instance with Ollama embedder
+    
+    Returns:
+        True if model is available or successfully pulled, False otherwise
+    """
+    import subprocess
+    import json
+    import time
+    
+    print(f"\n🔍 Checking embedding model: {embedding_model}")
+    
+    try:
+        # Check if Ollama is running
+        result = subprocess.run(
+            ["ollama", "list"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        
+        if result.returncode != 0:
+            print("❌ Ollama is not running or not installed!")
+            print("   Please start Ollama with: ollama serve")
+            print("   Or install from: https://ollama.ai")
+            return False
+        
+        # Parse the list of installed models
+        installed_models = []
+        lines = result.stdout.strip().split('\n')
+        
+        # Skip header line if present
+        for line in lines[1:]:  # First line is usually header "NAME ID SIZE MODIFIED"
+            if line.strip():
+                parts = line.split()
+                if parts:
+                    installed_models.append(parts[0])  # Model name is first column
+        
+        # Check if our model is installed
+        if embedding_model in installed_models:
+            print(f"✅ Model '{embedding_model}' is already installed")
+            
+            # Verify it works with a quick test embedding
+            try:
+                print("   Testing model with a quick embedding...")
+                test_result = processor.smart_embedder.embed_query("test")
+                if test_result and len(test_result) > 0:
+                    print(f"   ✅ Model working (embedding dimension: {len(test_result)})")
+                    return True
+                else:
+                    print("   ⚠️  Model returned empty embedding")
+                    return False
+            except Exception as e:
+                print(f"   ⚠️  Model test failed: {e}")
+                return False
+        
+        # Model not found - try to pull it
+        print(f"📦 Model '{embedding_model}' not found locally")
+        print(f"   Attempting to pull from Ollama registry...")
+        
+        # Ask user for confirmation (unless in force mode)
+        response = input(f"   Download '{embedding_model}'? (yes/no): ").strip().lower()
+        if response != 'yes':
+            print("   Skipping download. Search will use fallback models.")
+            return False
+        
+        # Pull the model
+        print(f"   Downloading {embedding_model}...")
+        print("   (This may take a few minutes depending on model size and internet speed)")
+        
+        pull_process = subprocess.Popen(
+            ["ollama", "pull", embedding_model],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            universal_newlines=True
+        )
+        
+        # Show progress
+        for line in pull_process.stdout:
+            line = line.strip()
+            if line:
+                # Filter out progress lines to avoid spam, but show status updates
+                if "downloading" in line.lower() or "pulling" in line.lower():
+                    # Show only significant progress updates
+                    if "100%" in line or "verifying" in line or "writing" in line:
+                        print(f"   {line}")
+                elif "error" in line.lower():
+                    print(f"   ❌ {line}")
+                else:
+                    print(f"   {line}")
+        
+        pull_process.wait()
+        
+        if pull_process.returncode == 0:
+            print(f"✅ Successfully pulled '{embedding_model}'")
+            
+            # Reinitialize the smart embedder with the new model
+            try:
+                # Recreate the smart embedder with the downloaded model
+                from langchain_ollama import OllamaEmbeddings
+                processor.embedding_model = embedding_model
+                processor.smart_embedder = OllamaEmbeddings(model=embedding_model)
+                
+                # Test it
+                test_result = processor.smart_embedder.embed_query("test")
+                if test_result and len(test_result) > 0:
+                    print(f"   ✅ Model ready (embedding dimension: {len(test_result)})")
+                    return True
+            except Exception as e:
+                print(f"   ⚠️  Model pulled but initialization failed: {e}")
+                return False
+        else:
+            print(f"❌ Failed to pull '{embedding_model}' (exit code: {pull_process.returncode})")
+            return False
+            
+    except subprocess.TimeoutExpired:
+        print("❌ Timeout checking Ollama status")
+        return False
+    except FileNotFoundError:
+        print("❌ Ollama command not found!")
+        print("   Please install Ollama from: https://ollama.ai")
+        return False
+    except Exception as e:
+        print(f"❌ Unexpected error: {e}")
+        return False
+
+
+def get_fallback_embedding_models() -> List[str]:
+    """
+    Return a list of recommended embedding models in order of preference.
+    
+    Returns:
+        List of model names to try as fallbacks
+    """
+    return [
+        "nomic-embed-text",      # Best balance (274 MB)
+        "all-minilm",            # Fastest, smallest (45 MB)
+        "bge-m3:latest",         # Best quality but larger (1.2 GB)
+        "embeddinggemma:300m",   # Original (has known bug but works)
+    ]
+
+
+def check_and_load_embedding_model_with_fallback(
+    embedding_model: str, 
+    processor: DocumentProcessor, 
+    use_fallback: bool = True
+) -> bool:
+    """
+    Enhanced version that tries fallback models if the primary fails.
+    
+    Args:
+        embedding_model: Primary model to try
+        processor: DocumentProcessor instance
+        use_fallback: Whether to try alternative models if primary fails
+    
+    Returns:
+        True if any suitable model is found, False otherwise
+    """
+    # First try the requested model
+    if check_and_load_embedding_model(embedding_model, processor):
+        return True
+    
+    if not use_fallback:
+        return False
+    
+    # Try fallback models
+    print("\n🔄 Primary model unavailable, trying fallback models...")
+    fallback_models = get_fallback_embedding_models()
+    
+    # Remove the primary model from fallback list if present
+    fallback_models = [m for m in fallback_models if m != embedding_model]
+    
+    for fallback_model in fallback_models:
+        print(f"\n📌 Trying fallback model: {fallback_model}")
+        if check_and_load_embedding_model(fallback_model, processor):
+            # Update the processor's embedding model
+            processor.embedding_model = fallback_model
+            print(f"✅ Using '{fallback_model}' as the active embedding model")
+            return True
+    
+    print("\n❌ No suitable embedding model found!")
+    print("   Please install at least one manually:")
+    for model in get_fallback_embedding_models():
+        print(f"   ollama pull {model}")
+    
+    return False
+
+
 def main():
     defaultPath =  os.path.expanduser("~/.ocean-search/chroma_db")
     parser = argparse.ArgumentParser(description="Interactive document search with Ollama embeddings and optional BERT for text.")
     parser.add_argument("--db_path", default=defaultPath, help="Path to Chroma DB")
     #parser.add_argument("--embed_model", default="nomic-embed-text-v2-moe", help="Ollama embedding model (fallback)")
-    parser.add_argument("--embed_model", default="embeddinggemma:300m", help="Ollama embedding model (fallback)")
+    parser.add_argument("--embed_model", default="bge-m3:latest", help="Ollama embedding model (fallback)")
     parser.add_argument("--extensions", nargs="+", default=None,
                         help="File extensions to include when filling (e.g., .txt .pdf .py)")
     parser.add_argument("--k", type=int, default=10, help="Number of results to return per page")

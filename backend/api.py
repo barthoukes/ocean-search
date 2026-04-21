@@ -17,7 +17,7 @@ processor = DocumentProcessor(
     db_path = os.path.expanduser("~/.ocean-search/chroma_db"),
     # embed_model="nomic-embed-text-v2-moe",
     # embeddinggemma:300m has issues with multiple spaces.
-    embed_model='bge-m3',
+    embed_model='bge-m3:latest',
     use_bert=True
 )
 
